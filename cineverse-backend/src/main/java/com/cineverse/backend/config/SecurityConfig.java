@@ -7,6 +7,8 @@ import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -83,5 +85,35 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    /**
+     * Never actually called — JwtAuthenticationFilter builds Authentication
+     * straight from the JWT's claims and never asks an AuthenticationManager
+     * to authenticate anything. This bean exists only so
+     * UserDetailsServiceAutoConfiguration backs off: it's
+     * @ConditionalOnMissingBean on {AuthenticationManager,
+     * AuthenticationProvider, UserDetailsService,
+     * AuthenticationManagerResolver} as a group, and with none of those
+     * declared it was silently standing up its own InMemoryUserDetailsManager
+     * with a random generated password (the "Using generated security
+     * password" log line) — harmless here since nothing routes through it,
+     * but misleading in a JWT-only app.
+     *
+     * <p>Deliberately an AuthenticationManager, not a UserDetailsService:
+     * providing a UserDetailsService bean instead would silence Boot's
+     * warning but trips a *different*, separate log line from Spring
+     * Security's own AuthenticationConfiguration ("Global
+     * AuthenticationManager configured with UserDetailsService bean..."),
+     * since that machinery activates whenever any UserDetailsService bean is
+     * present. An AuthenticationManager bean satisfies Boot's check without
+     * ever registering a UserDetailsService, so neither log line fires.
+     */
+    @Bean
+    public AuthenticationManager authenticationManager() {
+        return authentication -> {
+            throw new AuthenticationServiceException(
+                    "Unused: this application authenticates via JWT, not Spring Security's AuthenticationManager");
+        };
     }
 }
