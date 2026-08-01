@@ -99,7 +99,7 @@ class AuthServiceTest {
         assertThat(result.accessToken()).isNotBlank();
         assertThat(result.refreshToken()).isNotBlank();
         assertThat(result.user()).isEqualTo(expected);
-        verify(refreshTokenRepository).save(any(RefreshToken.class));
+        verify(refreshTokenRepository).saveAndFlush(any(RefreshToken.class));
     }
 
     @Test

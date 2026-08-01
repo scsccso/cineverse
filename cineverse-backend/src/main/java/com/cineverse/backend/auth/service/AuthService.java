@@ -89,7 +89,7 @@ public class AuthService {
         }
 
         stored.setRevoked(true);
-        refreshTokenRepository.save(stored);
+        refreshTokenRepository.saveAndFlush(stored);
 
         return issueTokens(stored.getUser());
     }
@@ -102,7 +102,7 @@ public class AuthService {
         refreshTokenRepository.findByTokenHash(hash(rawRefreshToken))
                 .ifPresent(token -> {
                     token.setRevoked(true);
-                    refreshTokenRepository.save(token);
+                    refreshTokenRepository.saveAndFlush(token);
                 });
     }
 
@@ -112,7 +112,7 @@ public class AuthService {
 
         Claims refreshClaims = jwtService.parseRefreshToken(refreshToken);
         Instant expiresAt = refreshClaims.getExpiration().toInstant();
-        refreshTokenRepository.save(new RefreshToken(user, hash(refreshToken), expiresAt));
+        refreshTokenRepository.saveAndFlush(new RefreshToken(user, hash(refreshToken), expiresAt));
 
         return new AuthResult(
                 accessToken,

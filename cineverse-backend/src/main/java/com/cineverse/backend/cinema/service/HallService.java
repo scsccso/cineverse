@@ -70,7 +70,11 @@ public class HallService {
         List<Seat> seats = specs.stream()
                 .map(spec -> new Seat(hall, spec.rowLabel(), spec.columnNumber(), spec.seatType()))
                 .toList();
-        seatRepository.saveAll(seats);
+        // saveAllAndFlush, not saveAll: Seat also has @CreationTimestamp. Not
+        // currently read back from these in-memory instances, but flushing
+        // keeps the guarantee "any timestamped entity is always flushed on
+        // save" true without a silent exception for this one call site.
+        seatRepository.saveAllAndFlush(seats);
 
         return hallMapper.toResponse(hall);
     }
