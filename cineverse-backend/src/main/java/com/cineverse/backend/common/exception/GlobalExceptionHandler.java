@@ -1,5 +1,8 @@
 package com.cineverse.backend.common.exception;
 
+import com.cineverse.backend.auth.exception.DuplicateEmailException;
+import com.cineverse.backend.auth.exception.InvalidCredentialsException;
+import com.cineverse.backend.auth.exception.InvalidRefreshTokenException;
 import java.time.Instant;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
@@ -12,7 +15,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Skeleton global error handler. Turns any exception into the project-wide
+ * Global error handler. Turns any exception into the project-wide
  * {@code {code, message, timestamp}} envelope instead of a leaked
  * stacktrace. Business modules add their own {@code @ExceptionHandler}
  * methods here as they introduce domain-specific exceptions.
@@ -26,6 +29,21 @@ public class GlobalExceptionHandler {
                 .map(FieldError::getDefaultMessage)
                 .collect(Collectors.joining("; "));
         return build(HttpStatus.BAD_REQUEST, message.isBlank() ? "Validation failed" : message);
+    }
+
+    @ExceptionHandler(DuplicateEmailException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateEmail(DuplicateEmailException ex) {
+        return build(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidCredentials(InvalidCredentialsException ex) {
+        return build(HttpStatus.UNAUTHORIZED, ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidRefreshToken(InvalidRefreshTokenException ex) {
+        return build(HttpStatus.UNAUTHORIZED, ex.getMessage());
     }
 
     @ExceptionHandler(ResponseStatusException.class)

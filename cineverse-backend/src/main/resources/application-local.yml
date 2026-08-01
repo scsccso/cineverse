@@ -7,6 +7,12 @@ spring:
     password: ${POSTGRES_PASSWORD:cineverse}
     driver-class-name: org.postgresql.Driver
 
+app:
+  security:
+    # Local dev runs on plain HTTP; a Secure-flagged cookie would never be
+    # sent back by the browser (or curl) without TLS.
+    cookie-secure: false
+
 logging:
   level:
     com.cineverse: DEBUG

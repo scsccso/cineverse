@@ -18,6 +18,19 @@ spring:
 server:
   port: ${SERVER_PORT:8080}
 
+app:
+  jwt:
+    # Dev-only fallback secrets so the app boots without extra setup;
+    # application-prod.yml requires these to come from the environment.
+    access-secret: ${JWT_ACCESS_SECRET:dev-only-access-secret-change-me-please-32bytes-min}
+    refresh-secret: ${JWT_REFRESH_SECRET:dev-only-refresh-secret-change-me-please-32bytes-min}
+    access-token-ttl: 15m
+    refresh-token-ttl: 7d
+  security:
+    # httpOnly + secure + SameSite=Strict refresh cookie; secure requires
+    # HTTPS, so it's turned off only in the local profile for plain-HTTP dev.
+    cookie-secure: true
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
