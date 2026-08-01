@@ -88,4 +88,16 @@ class JwtServiceTest {
         assertThatThrownBy(() -> jwtService.parseAccessToken(refreshToken))
                 .isInstanceOf(JwtException.class);
     }
+
+    @Test
+    void backToBackAccessTokensForSameUserAreNeverIdentical() {
+        // iat/exp are second-granularity by the JWT spec and signing is
+        // deterministic, so without a jti claim two tokens minted for the
+        // same user within the same wall-clock second would be byte-for-byte
+        // identical. Regression test for that: CI once hit exactly this.
+        String first = jwtService.generateAccessToken(user);
+        String second = jwtService.generateAccessToken(user);
+
+        assertThat(second).isNotEqualTo(first);
+    }
 }

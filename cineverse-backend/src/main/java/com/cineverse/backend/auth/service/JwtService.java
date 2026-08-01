@@ -41,6 +41,10 @@ public class JwtService {
     public String generateAccessToken(User user) {
         Instant now = Instant.now();
         return Jwts.builder()
+                // iat/exp are second-granularity by spec, so without a jti two
+                // tokens issued for the same user in the same second would be
+                // byte-for-byte identical (JWT signing is deterministic).
+                .id(UUID.randomUUID().toString())
                 .subject(user.getId().toString())
                 .claim(CLAIM_EMAIL, user.getEmail())
                 .claim(CLAIM_ROLE, user.getRole().name())
