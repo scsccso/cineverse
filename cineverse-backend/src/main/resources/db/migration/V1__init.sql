@@ -1,0 +1,4 @@
+-- Phase 0 placeholder migration.
+-- Establishes the Flyway migration history table on first run; real schema
+-- (users, refresh_tokens, ...) lands in V2__ as part of the User Management
+-- module (Phase 1).

@@ -1,0 +1,13 @@
+# Local development profile: talks to the Postgres started via
+# `docker-compose up -d` at the repo root (see .env.example).
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/${POSTGRES_DB:cineverse}
+    username: ${POSTGRES_USER:cineverse}
+    password: ${POSTGRES_PASSWORD:cineverse}
+    driver-class-name: org.postgresql.Driver
+
+logging:
+  level:
+    com.cineverse: DEBUG
+    org.hibernate.SQL: DEBUG

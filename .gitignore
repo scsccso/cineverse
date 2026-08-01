@@ -1,0 +1,18 @@
+# Environment
+.env
+
+# Maven
+cineverse-backend/target/
+*.class
+
+# Logs
+*.log
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
