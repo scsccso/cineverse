@@ -4,7 +4,7 @@ CineVerse 是一个作品集(Portfolio)项目:一个电影院订票系统的全�
 
 项目按 Phase 迭代式交付,详细的技术栈选型、架构原则与模块路线图见 [`CLAUDE.md`](./CLAUDE.md)。
 
-**当前状态:Phase 0/1 已完成,Phase 2(影片管理)进行中。** 已完成 User Management:注册 / 登录 / refresh token 轮换 / 登出 / 当前用户信息。
+**当前状态:Phase 0~3 已完成。** User Management(注册/登录/刷新/登出)、Movie Management(电影 CRUD + 海报上传)、Cinema & Hall Management(分店/影厅/座位自动布局)。
 
 ## 技术栈
 
@@ -191,6 +191,89 @@ curl -i -X POST http://localhost:8081/api/v1/auth/logout \
 
 返回 `204`,`cookies.txt` 里的 `refresh_token` 被清空(`Max-Age=0`)。登出之后
 再拿这个 token 去 `/refresh` 同样是 `401`。
+
+## Cinema / Hall / Seat(Phase 3)
+
+浏览类接口全部公开,不需要 token。种子数据是 1 个分店(`CineVerse Downtown`)+ 3
+个影厅,ID 是固定的(见 `V6__seed_cinema_halls_seats.sql`),本地可以直接照抄下面的
+命令跑,不用自己先创建数据。
+
+### 获取分店列表
+
+```bash
+curl -s http://localhost:8081/api/v1/cinemas | jq
+```
+
+### 获取某分店下的影厅列表
+
+```bash
+curl -s http://localhost:8081/api/v1/cinemas/11111111-1111-1111-1111-111111111111/halls | jq
+```
+
+### 获取影厅完整座位布局(下一步前端选座页要用的接口)
+
+```bash
+curl -s http://localhost:8081/api/v1/halls/21111111-1111-1111-1111-111111111111/seats | jq
+```
+
+种子里的 Hall 1 是 6 排 x 10 列(A-E 标准座,F 排是情侣座)。响应形状:
+
+```json
+{
+  "hallId": "21111111-1111-1111-1111-111111111111",
+  "hallName": "Hall 1",
+  "totalRows": 6,
+  "totalColumns": 10,
+  "seats": [
+    { "id": "...", "rowLabel": "A", "columnNumber": 1, "columnSpan": 1, "seatType": "STANDARD" },
+    ...
+    { "id": "...", "rowLabel": "F", "columnNumber": 1, "columnSpan": 2, "seatType": "COUPLE" },
+    { "id": "...", "rowLabel": "F", "columnNumber": 3, "columnSpan": 2, "seatType": "COUPLE" },
+    ...
+  ]
+}
+```
+
+`columnSpan` 是派生字段(STANDARD=1,COUPLE=2),F 排每个情侣座的 `columnNumber`
+是这一对里左边那一列——渲染座位图时,一个座位要占几格直接读这个数字,不用自己
+写"哪种类型该跨几列"的规则。
+
+### Admin:创建分店 + 创建影厅(自动生成座位)
+
+```bash
+ACCESS_TOKEN="<用 admin@cineverse.local / Admin@12345 登录拿到的 accessToken>"
+
+# 创建分店
+curl -s -X POST http://localhost:8081/api/v1/cinemas \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"CineVerse Uptown","address":"88 Northgate Ave"}' | jq
+
+CINEMA_ID="<上一步返回的 id>"
+
+# 创建影厅——座位是自动生成的,请求体里不用也不能传座位数据
+curl -s -X POST http://localhost:8081/api/v1/cinemas/$CINEMA_ID/halls \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Hall A","totalRows":8,"totalColumns":12}' | jq
+```
+
+未登录 POST 这些接口会得到 `401`(匿名);登录了但角色是 `CUSTOMER` 会得到 `403`
+(已认证但角色不对)—— 这两种情况的区别在 Phase 2 就定下来了,详见 `CLAUDE.md`。
+
+## Movie(Phase 2)
+
+```bash
+# 浏览(公开)
+curl -s http://localhost:8081/api/v1/movies | jq
+curl -s http://localhost:8081/api/v1/genres | jq
+
+# Admin 创建电影(海报/背景图走单独的 multipart 上传接口)
+curl -s -X POST http://localhost:8081/api/v1/movies \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Interstellar","durationMinutes":169,"contentRating":"PG-13","status":"NOW_PLAYING","genreIds":[]}' | jq
+```
 
 ## 路线图
 

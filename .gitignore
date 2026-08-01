@@ -5,6 +5,9 @@
 cineverse-backend/target/
 *.class
 
+# Locally-stored uploads (posters/backdrops) — never commit user content
+cineverse-backend/uploads/
+
 # Logs
 *.log
 

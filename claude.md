@@ -2,6 +2,7 @@
 
 > 本文件是本项目的唯一真相来源(single source of truth)。每次开新的 Claude Code session,先读这份文件。
 > 更新时间:2026-08(随项目迭代持续更新)
+> 当前进度:Phase 0~3 已完成,Phase 4(场次排期)未开始 —— 详见第 3 节。
 
 ---
 
@@ -32,10 +33,17 @@
 | 容器化 | Docker + docker-compose(本地开发) | |
 | CI/CD | GitHub Actions | build + test + (后续)部署 |
 
-### 前端(⚠️ 假设,待你确认)
-- React + Next.js + Tailwind CSS + shadcn/ui
+### 前端(已确认,2026-08-01 定案)
+| 组件 | 选型 | 备注 |
+|---|---|---|
+| 框架 | Next.js 16.x | App Router + Turbopack;`middleware` 改名 `proxy.ts` |
+| UI 库 | React 19.2 | |
+| 语言 | TypeScript(严格模式) | |
+| 样式 | Tailwind CSS 4.x | CSS-first 配置(`@theme`),深色主题为默认且唯一主题 |
+| 组件基础 | shadcn/ui(base-ui 变体) | 自定义暖金色(`#F4C430`)强调色覆盖默认样式 |
+| 动效 | framer-motion | 页面转场、按钮反馈、表单校验进出场动效 |
+| 表单校验 | react-hook-form + zod | |
 - 理由:要做 Apple 风高交互体验,这套组合在动效、组件质感上最省力
-- **如果你已经有别的想法(Vue/纯HTML+JS等),告诉我,这部分要改**
 
 ---
 
@@ -54,23 +62,78 @@
 
 > 顺序按"依赖关系 + 对作品集的边际价值"排列。促销积分/评价/通知三个模块价值低,放 Backlog,MVP不做。
 
-### Phase 0 — 项目基建(在写任何业务代码前)
-- [ ] Spring Boot 4.1.x 项目骨架 + Docker Compose(Postgres + Redis)
-- [ ] Flyway 初始化,建立 `V1__init.sql`
-- [ ] 全局异常处理 + 统一响应格式
-- [ ] GitHub Actions:push 时跑 build + test
-- [ ] Swagger/OpenAPI 接入
+### Phase 0 — 项目基建(在写任何业务代码前)✅ 完成于 2026-08-01
+- [x] Spring Boot 4.1.x 项目骨架 + Docker Compose(Postgres + Redis)
+- [x] Flyway 初始化,建立 `V1__init.sql`
+- [x] 全局异常处理 + 统一响应格式
+- [x] GitHub Actions:push 时跑 build + test
+- [x] Swagger/OpenAPI 接入
 
-### Phase 1 — 用户管理(当前冲刺,User Management)
-详见第 4 节。
+关键决定:
+- Spring Boot 4.1 比预想中变动更大(模块化拆分)—— `springdoc-openapi` 要 3.0.x
+  才兼容 Spring Framework 7;Flyway 的 Spring 胶水代码独立成
+  `spring-boot-starter-flyway`;MockMvc 测试支持挪到
+  `spring-boot-starter-webmvc-test`;默认 Jackson 版本变成 Jackson 3
+  (`tools.jackson.*`,不是 `com.fasterxml.jackson.*`)。踩坑记录写进了对应模块的代码注释里。
 
-### Phase 2 — 影片管理(Movie Management)
+### Phase 1 — 用户管理(User Management)✅ 完成于 2026-08-01
+详见第 4 节。CI 曾因为一个真实的 flaky test bug 红过一次(access token 缺 `jti`,
+同一秒内签发的两个 token 会完全相同)——已修复并补了回归测试,细节见
+`JwtService`/`JwtServiceTest`。
+
+关键决定:
+- **Token 存储方式**:access token 15min,纯内存(前端 React Context,不落地
+  localStorage/sessionStorage,防 XSS);refresh token 7 天,**httpOnly cookie**
+  (`Path=/`,`SameSite=Strict`,`Secure` 视 profile 而定)。第 5 节的开放问题 #2
+  已按此定案。
+- **Token rotation**:每次 `/refresh` 旧 refresh token 立即标记 `revoked`,下发新
+  的一对 token,不是简单延期。
+- **CORS**:后端显式配置 `allowedOrigins`(默认 `http://localhost:3000`)+
+  `allowCredentials(true)`,因为 refresh cookie 要靠 `credentials:'include'` 跨
+  端口(3000 → 8081)携带。SameSite=Strict 在这里仍然生效,因为"site"按
+  scheme+eTLD+1 算,不看端口——`localhost:3000` 和 `localhost:8081` 是跨源但
+  同站。
+- **前端框架**:确认用 Next.js 16(App Router + Turbopack),不是 Vue/纯HTML。
+  第 5 节开放问题 #1 已按此定案。
+
+### Phase 2 — 影片管理(Movie Management)✅ 完成于 2026-08-02
 - 电影 CRUD(仅 ADMIN)、genre、trailer 链接、rating、poster 图片存储(先本地/后 S3)
 - 公开 API:分页查询、按 genre 筛选、按状态筛选(Now Playing / Coming Soon)
 
-### Phase 3 — 影院/影厅管理(Cinema & Hall Management)
-- 分店(Cinema)→ 影厅(Hall)→ 座位布局(Seat Layout,行列 + 座位类型:普通/VIP/情侣座)
-- MVP 范围建议:先做 1 个分店、2-3 个影厅,座位布局用简单的行列网格,不做花哨的非规则布局
+关键决定:
+- `content_rating`(如 "PG-13",分级)和 `user_rating`(admin 手填的数值评分)是
+  两个独立字段,命名上刻意区分,不要混用。
+- poster/backdrop 的 URL **永不返回 null** —— 没上传时后端直接给一个占位图 URL
+  (`/images/no-poster.svg` 等),前端不用自己处理裂图兜底逻辑。
+- `StorageService` 接口 + `LocalStorageService` 实现(存本地 `uploads/` 目录,
+  已加入 `.gitignore`),换 S3 只需新增一个实现类,调用方不用改。
+- 匿名用户打 ADMIN-only 接口拿到的是 **401**,不是 403——这是 Spring Security
+  的标准语义(匿名主体触发 `AccessDeniedException` 会被 `ExceptionTranslationFilter`
+  转译成"先认证"的 401,403 只留给"已登录但角色不对"的场景)。这一条在集成测试
+  里踩过一次坑(以为该测 403,实际断言失败才发现是 401),之后 Phase 3 直接照
+  这个语义写测试,没有再踩。
+
+### Phase 3 — 影院/影厅管理(Cinema & Hall Management)✅ 完成于 2026-08-02
+- 分店(Cinema)→ 影厅(Hall)→ 座位布局(Seat Layout,行列 + 座位类型:标准/情侣座)
+- MVP 范围:1 个分店、3 个影厅,座位布局用简单的行列网格,不做花哨的非规则布局
+
+关键决定:
+- **座位类型只做 2 种**:`STANDARD`、`COUPLE`。不加 VIP——以后 VIP 用价格系数
+  解决,不需要新的座位类型,避免过早引入一套价格 x 类型的组合复杂度。
+- **行列网格,不做非规则形状**:每个座位只有 `row_label` + `column_number`
+  两个坐标。COUPLE 座位物理上占 2 个 column 的宽度,但在数据库里只有 1 行记录
+  (`column_number` 存左边那一列),订票逻辑里也只算 1 个可预订单元。这个"一个
+  座位可能占多格"的语义在 `SeatLayoutGenerator` 里通过构造过程保证不重叠(不是
+  生成完再检查),因为这是本模块最容易埋 bug 的地方,专门写了单元测试覆盖。
+- **座位布局不可局部修改**:影厅一旦创建、座位随之自动生成,没有"改座位类型"
+  或"改布局"的 API。要换布局就删除整个 hall 重建。这是有意为之的 MVP 边界,不
+  是遗漏。
+- **`GET /api/v1/halls/{id}/seats` 的响应格式是为 Phase 5 预留的**:每个座位
+  除了 `rowLabel`/`columnNumber`/`seatType`,还带一个派生字段 `columnSpan`
+  (STANDARD=1,COUPLE=2),这样前端渲染座位图时不需要自己硬编码"哪些类型该占
+  几格"的业务规则,直接读这个数字就行。响应体顶层还带 `totalRows`/
+  `totalColumns`,前端不用再单独请求一次 hall 详情才能确定网格尺寸。现在把格式
+  定好,是为了 Phase 5 真正做选座渲染时不用回头改 API 形状。
 
 ### Phase 4 — 场次排期(Showtime Scheduling)
 - 电影 + 影厅 + 时间段绑定,校验同一影厅时间段不冲突(含清场缓冲时间)
@@ -141,26 +204,39 @@ POST   /api/v1/auth/logout
 GET    /api/v1/users/me     (需要认证)
 ```
 
-### 4.5 完成定义(Definition of Done)
-- [ ] 所有 endpoint 有 Swagger 文档
-- [ ] 密码错误、邮箱重复注册等异常情况有明确错误码
-- [ ] 单元测试覆盖 Service 层核心逻辑(密码校验、token生成/校验)
-- [ ] 集成测试(Testcontainers)覆盖 register → login → 访问受保护接口 全流程
-- [ ] README 更新:如何本地启动、如何跑测试
+### 4.5 完成定义(Definition of Done)✅ 全部完成
+- [x] 所有 endpoint 有 Swagger 文档
+- [x] 密码错误、邮箱重复注册等异常情况有明确错误码
+- [x] 单元测试覆盖 Service 层核心逻辑(密码校验、token生成/校验)
+- [x] 集成测试(Testcontainers)覆盖 register → login → 访问受保护接口 全流程
+- [x] README 更新:如何本地启动、如何跑测试
 
 ---
 
 ## 5. 待你确认的开放问题(Open Decisions)
 
-1. 前端框架:React+Next.js 是我的假设,你要用别的吗?
-2. JWT token 存储方式:httpOnly cookie(更安全,防XSS)还是前端localStorage(更简单但有XSS风险)?
-3. 座位实时更新:MVP阶段用轮询还是直接上WebSocket?(建议轮询,先跑通流程)
-4. 部署目标:本地Docker就够,还是要部署到云端给面试官一个可访问的demo链接?(如果要,现在就该定Railway/Render/AWS,影响后面的配置)
-5. 影院规模:MVP做几个分店、几个影厅比较合适?(建议1个分店、2-3个影厅,别一开始就上多分店复杂度)
+1. ~~前端框架:React+Next.js 是我的假设,你要用别的吗?~~ **已解决**:确认用
+   Next.js 16(App Router + Turbopack + React 19.2)。见第 3 节 Phase 1。
+2. ~~JWT token 存储方式:httpOnly cookie 还是前端 localStorage?~~ **已解决**:
+   access token 内存 / refresh token httpOnly cookie。见第 3 节 Phase 1。
+3. 座位实时更新:MVP阶段用轮询还是直接上WebSocket?(建议轮询,先跑通流程)—— **待定**,Phase 5 再决定。
+4. 部署目标:本地Docker就够,还是要部署到云端给面试官一个可访问的demo链接?(如果要,现在就该定Railway/Render/AWS,影响后面的配置)—— **待定**。
+5. ~~影院规模:MVP做几个分店、几个影厅比较合适?~~ **已解决**:1 个分店、3 个
+   影厅(6~10 排、10~14 列不等)。见第 3 节 Phase 3。
 
 ---
 
-## 6. 开发规范
+## 6. 已知的环境注意事项
+
+- **8080 端口冲突**:本机(开发机)8080 被 Oracle 的 `TNSLSNR.EXE`(TNS Listener,
+  和本项目无关的系统服务)占用。后端本地开发固定改用 **8081**
+  (`SERVER_PORT=8081 mvn spring-boot:run`),前端 `frontend/.env.local` 里的
+  `NEXT_PUBLIC_API_BASE_URL` 相应指向 `http://localhost:8081`。这个 `.env.local`
+  不进 git,换一台没有这个冲突的机器直接用 `.env.example` 里的 8080 默认值即可。
+
+---
+
+## 7. 开发规范
 
 - **分支命名**:`feature/user-management-login`、`fix/xxx`
 - **Commit规范**:Conventional Commits(`feat:`, `fix:`, `test:`, `docs:`, `refactor:`)

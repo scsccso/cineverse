@@ -58,14 +58,17 @@ public class MovieService {
     public MovieResponse create(MovieRequest request) {
         Movie movie = new Movie();
         applyRequest(movie, request);
-        return movieMapper.toResponse(movieRepository.save(movie));
+        // saveAndFlush (not save): createdAt/updatedAt are populated by
+        // @CreationTimestamp/@UpdateTimestamp at flush time, and the
+        // response must reflect them, not null/stale.
+        return movieMapper.toResponse(movieRepository.saveAndFlush(movie));
     }
 
     @Transactional
     public MovieResponse update(UUID id, MovieRequest request) {
         Movie movie = findMovieOrThrow(id);
         applyRequest(movie, request);
-        return movieMapper.toResponse(movieRepository.save(movie));
+        return movieMapper.toResponse(movieRepository.saveAndFlush(movie));
     }
 
     @Transactional
@@ -81,7 +84,7 @@ public class MovieService {
         Movie movie = findMovieOrThrow(id);
         String oldUrl = movie.getPosterUrl();
         movie.setPosterUrl(storageService.store(file));
-        movieRepository.save(movie);
+        movieRepository.saveAndFlush(movie);
         storageService.delete(oldUrl);
         return movieMapper.toResponse(movie);
     }
@@ -91,7 +94,7 @@ public class MovieService {
         Movie movie = findMovieOrThrow(id);
         String oldUrl = movie.getBackdropUrl();
         movie.setBackdropUrl(storageService.store(file));
-        movieRepository.save(movie);
+        movieRepository.saveAndFlush(movie);
         storageService.delete(oldUrl);
         return movieMapper.toResponse(movie);
     }
