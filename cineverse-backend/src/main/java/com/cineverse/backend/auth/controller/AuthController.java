@@ -34,7 +34,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     static final String REFRESH_COOKIE_NAME = "refresh_token";
-    private static final String REFRESH_COOKIE_PATH = "/api/v1/auth";
+    // Path=/ (not /api/v1/auth): the cookie's Path is matched against the
+    // REQUEST'S path regardless of which origin/port is being called, and
+    // the frontend's Proxy needs to see this cookie on frontend routes like
+    // /profile — not just on backend /api/v1/auth/* calls — to gate access.
+    private static final String REFRESH_COOKIE_PATH = "/";
 
     private final AuthService authService;
 

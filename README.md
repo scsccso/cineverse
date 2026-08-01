@@ -122,7 +122,9 @@ curl -i -X POST http://localhost:8080/api/v1/auth/login \
 ```
 
 响应体里的 `accessToken` 手动复制出来备用(下面用 `$ACCESS_TOKEN` 代替);
-`cookies.txt` 里会多一行 `refresh_token`,`HttpOnly`,`Path=/api/v1/auth`。
+`cookies.txt` 里会多一行 `refresh_token`,`HttpOnly`,`Path=/`(broad path是有意的——前端
+`proxy.ts` 靠这个 cookie 的存在与否判断路由要不要放行,Path 若收窄到 `/api/v1/auth`,
+前端页面路径根本收不到这个 cookie)。
 密码错误或邮箱不存在都返回同样的 `401 Invalid email or password`,不会告诉你
 到底是哪一种,防止被拿来枚举已注册邮箱。
 

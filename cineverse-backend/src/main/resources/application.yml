@@ -30,6 +30,13 @@ app:
     # httpOnly + secure + SameSite=Strict refresh cookie; secure requires
     # HTTPS, so it's turned off only in the local profile for plain-HTTP dev.
     cookie-secure: true
+  cors:
+    # Frontend dev server. SameSite=Strict still works cross-port here
+    # because "site" is scheme+eTLD+1 (port doesn't count) — localhost:3000
+    # and localhost:8080 are cross-origin but same-site. A real prod
+    # deployment on two different registrable domains would need
+    # SameSite=None (+ Secure) instead.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
 
 springdoc:
   swagger-ui:
