@@ -37,8 +37,8 @@ CineVerse/
 └── frontend/                 # Next.js 前端
     ├── .env.example           # NEXT_PUBLIC_API_BASE_URL 样例
     └── src/
-        ├── app/               # 路由:/, /login, /register, /profile
-        ├── components/        # ui(shadcn) / auth / layout / motion
+        ├── app/               # 路由:/, /login, /register, /profile, /showtimes/[id](/seats)
+        ├── components/        # ui(shadcn) / auth / layout / motion / booking(选座)
         ├── lib/                # api 客户端、auth context、zod schema
         └── proxy.ts           # 路由保护(Next 16:middleware 改名 proxy)
 ```
@@ -369,7 +369,26 @@ curl -s http://localhost:8081/api/v1/showtimes/$SHOWTIME_ID/seats \
 未登录 GET `.../seats` 能成功；未登录 POST `/bookings` 会得到 `401`。查看/取消
 别人的订单会得到 `403`。
 
+### 前端选座页
+
+打开 `http://localhost:3000/showtimes/<SHOWTIME_ID>/seats`（从电影详情页选一个
+场次点"继续选座"进来即可，不用手拼 URL）。座位图按 `rowLabel` 分行、按
+`columnNumber`/`columnSpan` 排列，情侣座会明显占两格宽；每 4 秒轮询一次座位
+状态，可多选后在底部结算栏看到已选座位和总价（移动端结算栏固定在屏幕底部，
+座位图本身可横向滚动）。点"确认选座"：未登录会提示后跳转 `/login`，登录后
+回到这个页面继续选（座位选择不会跨登录保留，需要重新点一次）；提交成功进入
+5 分钟倒计时页（下方的"去支付"按钮是禁用状态，注明 Phase 6 开发中）；倒计时
+到 0 或手动点"取消选座"都会把座位释放回选座页。
+
 ### 并发加锁怎么验证
+
+**手动验证(两个浏览器窗口/一个正常窗口 + 一个隐私窗口)**:两个窗口分别用
+两个不同账号登录,同时打开同一个 `/showtimes/<SHOWTIME_ID>/seats`,选中同一个
+座位后几乎同时点"确认选座"。预期:一个窗口进入 5 分钟倒计时确认页,另一个
+窗口收到"部分座位刚被其他用户抢先锁定"的提示,座位图自动刷新,刚才那个座位
+从可选变成锁定态(虚线灰底 + 锁形图标)。这种手动方式没法保证两次点击真正
+落在同一毫秒,只能大致验证交互和提示文案是否合理;真正的竞态由下面的自动化
+集成测试覆盖。
 
 `curl` 本身没法方便地演示"两个请求真正同时到达"这种竞态场景（两次 `curl`
 调用之间必然有先后顺序），这部分的验证详见
