@@ -57,6 +57,11 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/movies/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/cinemas/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/showtimes/**").hasRole("ADMIN")
+                        // Booking endpoints: any authenticated role (CUSTOMER
+                        // or ADMIN) — ownership (own booking vs. someone
+                        // else's) is a data-level check in BookingService,
+                        // not something this route matcher can express.
+                        .requestMatchers("/api/v1/bookings/**").authenticated()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(restAuthenticationEntryPoint)

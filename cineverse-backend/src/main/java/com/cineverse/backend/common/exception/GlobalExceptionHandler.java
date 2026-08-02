@@ -3,8 +3,10 @@ package com.cineverse.backend.common.exception;
 import com.cineverse.backend.auth.exception.DuplicateEmailException;
 import com.cineverse.backend.auth.exception.InvalidCredentialsException;
 import com.cineverse.backend.auth.exception.InvalidRefreshTokenException;
+import com.cineverse.backend.booking.exception.SeatUnavailableException;
 import com.cineverse.backend.movie.exception.MovieHasScheduledShowtimesException;
 import com.cineverse.backend.showtime.exception.ShowtimeConflictException;
+import com.cineverse.backend.showtime.exception.ShowtimeHasBookingsException;
 import com.cineverse.backend.storage.exception.InvalidFileException;
 import java.time.Instant;
 import java.util.stream.Collectors;
@@ -67,6 +69,16 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MovieHasScheduledShowtimesException.class)
     public ResponseEntity<ErrorResponse> handleMovieHasScheduledShowtimes(MovieHasScheduledShowtimesException ex) {
+        return build(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(ShowtimeHasBookingsException.class)
+    public ResponseEntity<ErrorResponse> handleShowtimeHasBookings(ShowtimeHasBookingsException ex) {
+        return build(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(SeatUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleSeatUnavailable(SeatUnavailableException ex) {
         return build(HttpStatus.CONFLICT, ex.getMessage());
     }
 

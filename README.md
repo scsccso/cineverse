@@ -4,14 +4,14 @@ CineVerse 是一个作品集(Portfolio)项目:一个电影院订票系统的全�
 
 项目按 Phase 迭代式交付,详细的技术栈选型、架构原则与模块路线图见 [`CLAUDE.md`](./CLAUDE.md)。
 
-**当前状态:Phase 0~3 已完成。** User Management(注册/登录/刷新/登出)、Movie Management(电影 CRUD + 海报上传)、Cinema & Hall Management(分店/影厅/座位自动布局)。
+**当前状态:Phase 0~5 已完成。** User Management(注册/登录/刷新/登出)、Movie Management(电影 CRUD + 海报上传)、Cinema & Hall Management(分店/影厅/座位自动布局)、Showtime Scheduling(场次排期)、Seat Booking(选座锁座 + 订单)。
 
 ## 技术栈
 
 ### 后端(`cineverse-backend/`)
 - Java 25 (LTS) + Spring Boot 4.1.x + Spring Security 7
 - PostgreSQL 16 + Flyway
-- Redis 7(座位锁 / refresh token 黑名单,Phase 5+ 接入)
+- Redis 7(座位锁,Phase 5 接入;refresh token 撤销走的是数据库 `revoked` 字段,不经过 Redis)
 - Spring Data JPA + Hibernate + MapStruct
 - JWT(jjwt),BCrypt 密码加密
 - springdoc-openapi(Swagger UI)
@@ -323,6 +323,69 @@ curl -i -X POST http://localhost:8081/api/v1/showtimes \
 
 未登录 POST 这些接口会得到 `401`（匿名）；登录了但角色是 `CUSTOMER` 会得到
 `403`（已认证但角色不对）。
+
+## Booking / 选座（Phase 5）
+
+`GET /api/v1/showtimes/{id}/seats` 公开，不需要 token；`POST/DELETE/GET
+/api/v1/bookings` 需要登录（CUSTOMER/ADMIN 都行，不限角色，但只有本人或
+ADMIN 能看/取消自己的订单）。座位状态是**轮询**出来的（`AVAILABLE` /
+`LOCKED` / `BOOKED`），前端选座页定时重新请求 `.../seats` 即可，没有 WebSocket。
+
+```bash
+ACCESS_TOKEN="<用任意已注册用户登录拿到的 accessToken，见上面 Phase 1 的 curl>"
+HALL_ID="21111111-1111-1111-1111-111111111111"   # 种子数据 Hall 1
+
+# 复用 Showtime 一节的方式先建一个 showtime，拿到 SHOWTIME_ID
+# 查某个场次的座位状态（公开，不需要 token）
+curl -s http://localhost:8081/api/v1/showtimes/$SHOWTIME_ID/seats | jq
+
+SEAT_ID=$(curl -s http://localhost:8081/api/v1/showtimes/$SHOWTIME_ID/seats \
+  | jq -r '.seats[0].seatId')
+
+# 锁座 + 创建 PENDING 订单（5 分钟持有窗口）
+BOOKING_ID=$(curl -s -X POST http://localhost:8081/api/v1/bookings \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"showtimeId\":\"$SHOWTIME_ID\",\"seatIds\":[\"$SEAT_ID\"]}" \
+  | jq -r '.id')
+
+# 再查一次座位状态——刚才那个座位应该变成 LOCKED
+curl -s http://localhost:8081/api/v1/showtimes/$SHOWTIME_ID/seats \
+  | jq ".seats[] | select(.seatId==\"$SEAT_ID\")"
+
+# 查看订单详情（只有本人或 ADMIN 能看，见下面权限校验说明）
+curl -s http://localhost:8081/api/v1/bookings/$BOOKING_ID \
+  -H "Authorization: Bearer $ACCESS_TOKEN" | jq
+
+# 主动放弃选座——座位锁被释放，booking 状态变 CANCELLED
+curl -i -X DELETE http://localhost:8081/api/v1/bookings/$BOOKING_ID \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# 再查一次——座位应该已经变回 AVAILABLE
+curl -s http://localhost:8081/api/v1/showtimes/$SHOWTIME_ID/seats \
+  | jq ".seats[] | select(.seatId==\"$SEAT_ID\")"
+```
+
+未登录 GET `.../seats` 能成功；未登录 POST `/bookings` 会得到 `401`。查看/取消
+别人的订单会得到 `403`。
+
+### 并发加锁怎么验证
+
+`curl` 本身没法方便地演示"两个请求真正同时到达"这种竞态场景（两次 `curl`
+调用之间必然有先后顺序），这部分的验证详见
+`BookingConcurrencyIntegrationTest`——用 `ExecutorService` 真正并发发起两个
+线程,对同一个 `showtimeId` + `seatId` 同时调用 `POST /api/v1/bookings`,
+断言恰好一个成功（`201`）、一个失败（`409`，错误信息里明确指出是哪个座位
+已被占用），并且验证失败的那次请求没有在数据库留下任何 `bookings`/
+`booking_seats` 记录。同一个测试类里还有一个 TTL 过期测试：创建一个
+booking 后把它的 `expires_at` 直接改到过去，验证下一次读取座位状态时
+（懒惰过期,见 `CLAUDE.md` Phase 5）能正确判定为已过期并把座位释放回
+`AVAILABLE`。本地跑：
+
+```bash
+cd cineverse-backend
+mvn test -Dtest=BookingConcurrencyIntegrationTest
+```
 
 ## 路线图
 

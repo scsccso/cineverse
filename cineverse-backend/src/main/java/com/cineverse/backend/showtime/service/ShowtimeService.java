@@ -1,5 +1,6 @@
 package com.cineverse.backend.showtime.service;
 
+import com.cineverse.backend.booking.repository.BookingRepository;
 import com.cineverse.backend.cinema.entity.Hall;
 import com.cineverse.backend.cinema.repository.HallRepository;
 import com.cineverse.backend.movie.entity.Movie;
@@ -8,6 +9,7 @@ import com.cineverse.backend.showtime.dto.CreateShowtimeRequest;
 import com.cineverse.backend.showtime.dto.ShowtimeResponse;
 import com.cineverse.backend.showtime.entity.Showtime;
 import com.cineverse.backend.showtime.exception.ShowtimeConflictException;
+import com.cineverse.backend.showtime.exception.ShowtimeHasBookingsException;
 import com.cineverse.backend.showtime.mapper.ShowtimeMapper;
 import com.cineverse.backend.showtime.repository.ShowtimeRepository;
 import com.cineverse.backend.showtime.repository.ShowtimeSpecifications;
@@ -32,16 +34,19 @@ public class ShowtimeService {
     private final ShowtimeRepository showtimeRepository;
     private final MovieRepository movieRepository;
     private final HallRepository hallRepository;
+    private final BookingRepository bookingRepository;
     private final ShowtimeMapper showtimeMapper;
 
     public ShowtimeService(
             ShowtimeRepository showtimeRepository,
             MovieRepository movieRepository,
             HallRepository hallRepository,
+            BookingRepository bookingRepository,
             ShowtimeMapper showtimeMapper) {
         this.showtimeRepository = showtimeRepository;
         this.movieRepository = movieRepository;
         this.hallRepository = hallRepository;
+        this.bookingRepository = bookingRepository;
         this.showtimeMapper = showtimeMapper;
     }
 
@@ -78,7 +83,15 @@ public class ShowtimeService {
 
     @Transactional
     public void delete(UUID id) {
-        showtimeRepository.delete(findShowtimeOrThrow(id));
+        Showtime showtime = findShowtimeOrThrow(id);
+        // Checked here (not left to the FK) for a clean 409 instead of a raw
+        // DB constraint error — same reasoning as MovieService.delete()'s
+        // existsByMovieId check. showtimes.id is ON DELETE RESTRICT from
+        // bookings (see V9); this is the primary guard, that's the backstop.
+        if (bookingRepository.existsByShowtimeId(id)) {
+            throw new ShowtimeHasBookingsException();
+        }
+        showtimeRepository.delete(showtime);
     }
 
     private void rejectIfConflicting(Hall hall, Instant startTime, Instant endTime) {

@@ -1,5 +1,7 @@
 package com.cineverse.backend.showtime.controller;
 
+import com.cineverse.backend.booking.dto.ShowtimeSeatsResponse;
+import com.cineverse.backend.booking.service.BookingService;
 import com.cineverse.backend.showtime.dto.CreateShowtimeRequest;
 import com.cineverse.backend.showtime.dto.ShowtimeResponse;
 import com.cineverse.backend.showtime.service.ShowtimeService;
@@ -28,9 +30,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class ShowtimeController {
 
     private final ShowtimeService showtimeService;
+    private final BookingService bookingService;
 
-    public ShowtimeController(ShowtimeService showtimeService) {
+    public ShowtimeController(ShowtimeService showtimeService, BookingService bookingService) {
         this.showtimeService = showtimeService;
+        this.bookingService = bookingService;
     }
 
     @GetMapping
@@ -46,6 +50,15 @@ public class ShowtimeController {
     @Operation(summary = "获取场次详情", description = "公开接口,无需登录;含电影/影厅基本信息,减少前端拼数据的请求")
     public ShowtimeResponse getById(@PathVariable UUID id) {
         return showtimeService.getById(id);
+    }
+
+    @GetMapping("/{id}/seats")
+    @Operation(summary = "查询场次座位状态", description = "公开接口,无需登录;选座页轮询用(MVP阶段用轮询,不用WebSocket)。"
+            + "每个座位除了静态布局信息(row/column/columnSpan/type),还带该场次下的动态状态"
+            + "(AVAILABLE/LOCKED/BOOKED);读取时若发现某座位对应的 PENDING booking 已过期,"
+            + "会懒惰标记为 EXPIRED 后再返回最新状态")
+    public ShowtimeSeatsResponse getSeats(@PathVariable UUID id) {
+        return bookingService.getShowtimeSeats(id);
     }
 
     @PostMapping

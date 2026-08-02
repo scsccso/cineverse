@@ -2,7 +2,7 @@
 
 > 本文件是本项目的唯一真相来源(single source of truth)。每次开新的 Claude Code session,先读这份文件。
 > 更新时间:2026-08(随项目迭代持续更新)
-> 当前进度:Phase 0~4 已完成,Phase 5(选座/订票)未开始 —— 详见第 3 节。
+> 当前进度:Phase 0~5 已完成,Phase 6(支付模块)未开始 —— 详见第 3 节。
 
 ---
 
@@ -172,10 +172,54 @@
   再删"的模式,不能只靠 FK 报错兜底(否则前端拿到的是裸 DB 异常,不是干净的
   409)。
 
-### Phase 5 — 选座/订票(Seat Booking)⚠️ 核心难点
-- 座位状态机:`AVAILABLE → LOCKED(Redis, TTL 5min) → CONFIRMED / EXPIRED / CANCELLED`
-- Redis 分布式锁只解决"同一时刻不能两人同时选中",**必须配合 TTL 自动过期 + 数据库订单状态同步**,否则锁泄漏会导致座位永久不可用
-- 前端座位图实时更新:WebSocket 广播座位状态变化(可选加分项,MVP先用轮询也行,别一开始就上WebSocket卡住进度)
+### Phase 5 — 选座/订票(Seat Booking)⚠️ 核心难点 ✅ 完成于 2026-08-02
+- 座位状态机:`AVAILABLE → LOCKED(Redis, TTL 5min) → PENDING(创建 booking 记录)→ EXPIRED/CANCELLED`
+  (`CONFIRMED` 的列值已预留,但没有任何代码路径会设置它——那是 Phase 6 支付
+  成功之后才会触发的事,这个 Phase 的边界明确到"锁座 + 创建待支付 booking"为止)
+- 新增 `bookings`/`booking_seats` 两张表(V9),`GET /api/v1/showtimes/{id}/seats`
+  (公开)+ `POST/DELETE/GET /api/v1/bookings`(需登录,不限角色)
+
+关键决定:
+- **前端轮询,不上 WebSocket**:第 5 节开放问题 #3 已按此定案。MVP 阶段轮询
+  `GET /api/v1/showtimes/{id}/seats` 足够,避免过早引入长连接的复杂度(连接管理、
+  广播、断线重连)。以后真要做实时推送,轮询接口的响应格式不用改,只是多一条
+  推送通道。
+- **Redis 锁的 key 设计**:`seat-lock:{showtimeId}:{seatId}`,value 存的是加锁者
+  的 userId(不是空标记位),方便日后排查"这个座位到底是被谁锁住的"。加锁用
+  `StringRedisTemplate.opsForValue().setIfAbsent(key, value, ttl)`——这是单条
+  Redis `SET key value NX EX ttl` 命令,不是"先 GET 判断再 SET"的两步操作,
+  从根本上排除了两个并发请求都读到"未锁定"然后都执行 SET 的竞态窗口。
+- **TTL 用 Redis 原生 EXPIRE,不做应用层定时轮询**:锁 5 分钟到期后 Redis 自己
+  清掉这个 key,即使服务重启/崩溃,锁也不会泄漏成永久占用——不需要一个额外的
+  后台线程去检查"这个锁是不是该过期了"。
+- **懒惰过期(lazy expiration),不写定时扫描任务**:booking 表有 `expires_at`
+  字段,但没有任何 cron/scheduled job 去扫描"哪些 PENDING 记录已经过期"。
+  取而代之的是:**任何读取 booking 状态的路径**(`GET /showtimes/{id}/seats`
+  聚合座位状态、`GET/DELETE /bookings/{id}` 读取单条 booking)在读到一条
+  `expires_at` 已过但状态仍是 `PENDING` 的记录时,当场把它标记为 `EXPIRED`
+  并落库,再返回结果——见 `BookingStateMachine.shouldLazilyExpire` +
+  `BookingService.loadWithLazyExpiry`/`activeSeatStatuses`。这是 MVP 阶段刻意
+  选择的边界,不是漏掉了定时任务:好处是不需要额外的调度基础设施,代价是
+  "没人读"的场次里,已过期的 PENDING 记录会一直挂在数据库里直到下次被读取
+  ——对订票场景完全可以接受(座位状态本来就是靠这条读取路径对外呈现的)。
+- **两层并发防护,不是只靠 Redis**:`POST /bookings` 先查数据库(懒惰过期之后
+  再查)排除掉"确定已经被占"的座位——这一层单独存在是因为 Redis 没有配置持久化
+  (见 `docker-compose.yml`),万一 Redis 重启丢数据,数据库这层查询仍然是
+  兜底真相来源。但这一层**单独不足以防并发**:两个几乎同时到达的事务都可能在
+  对方提交前读到"没人占用"。真正解决竞态的是随后对每个座位做的 Redis 原子加锁
+  ——任何一个座位加锁失败,这次请求已经拿到的锁全部释放,返回 409 并明确指出
+  是哪个座位冲突,不留下任何数据库记录。并发集成测试
+  (`BookingConcurrencyIntegrationTest`)专门用两个线程真实并发提交同一个座位,
+  断言"恰好一个成功、一个失败,失败的那次数据库里零残留"——本地跑了 5 遍确认
+  不 flaky。
+
+### Phase 5 交界处补充:showtime - booking 的删除防护
+新增 booking 之后,`showtimes` 第一次有了"被别的表引用"的情况——照抄 Phase 4
+那次的教训(见上面 Phase 4 的"电影/影厅"补充条目),`bookings.showtime_id`
+从一开始就是 `ON DELETE RESTRICT`(不是先写 CASCADE 再回头改),并且
+`ShowtimeService.delete()` 也在应用层显式检查 `BookingRepository.existsByShowtimeId`,
+有 booking 记录的场次不允许删除,返回干净的 409。这次没有再犯 V7 那次"随手写
+CASCADE"的错误。
 
 ### Phase 6 — 支付模块(Payment)
 - Stripe 测试模式(国际通用,面试官认得)+ 可选本地 FPX(如果想强调本地化)
@@ -253,7 +297,8 @@ GET    /api/v1/users/me     (需要认证)
    Next.js 16(App Router + Turbopack + React 19.2)。见第 3 节 Phase 1。
 2. ~~JWT token 存储方式:httpOnly cookie 还是前端 localStorage?~~ **已解决**:
    access token 内存 / refresh token httpOnly cookie。见第 3 节 Phase 1。
-3. 座位实时更新:MVP阶段用轮询还是直接上WebSocket?(建议轮询,先跑通流程)—— **待定**,Phase 5 再决定。
+3. ~~座位实时更新:MVP阶段用轮询还是直接上WebSocket?~~ **已解决**:轮询。
+   见第 3 节 Phase 5。
 4. 部署目标:本地Docker就够,还是要部署到云端给面试官一个可访问的demo链接?(如果要,现在就该定Railway/Render/AWS,影响后面的配置)—— **待定**。
 5. ~~影院规模:MVP做几个分店、几个影厅比较合适?~~ **已解决**:1 个分店、3 个
    影厅(6~10 排、10~14 列不等)。见第 3 节 Phase 3。

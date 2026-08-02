@@ -6,6 +6,10 @@ spring:
     username: ${POSTGRES_USER:cineverse}
     password: ${POSTGRES_PASSWORD:cineverse}
     driver-class-name: org.postgresql.Driver
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 app:
   security:
