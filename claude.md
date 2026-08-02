@@ -3,6 +3,7 @@
 > 本文件是本项目的唯一真相来源(single source of truth)。每次开新的 Claude Code session,先读这份文件。
 > 更新时间:2026-08(随项目迭代持续更新)
 > 当前进度:Phase 0~5 已完成(含 Phase 5 前端选座页),Phase 6(支付模块)未开始 —— 详见第 3 节。
+> 详细的API调试步骤见 docs/DEVELOPMENT.md,面向招聘官的项目介绍见 README.md,本文件是面向Claude Code的项目记忆。
 
 ---
 
