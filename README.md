@@ -88,6 +88,12 @@ npm run build
 npm run lint
 ```
 
+## 快速体验
+
+本地跑起来后,用种子管理员账号(`admin@cineverse.local` / `Admin@12345`)登录可以
+直接体验电影/影院/场次的 CRUD 管理功能;或者自行注册一个新账号体验 Customer 的
+选座订票流程。
+
 ---
 
 详细的API调试命令和环境配置见 [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md)。

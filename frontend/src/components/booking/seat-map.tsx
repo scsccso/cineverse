@@ -31,7 +31,8 @@ export function SeatMap({
   return (
     <div className="space-y-6">
       {/* Horizontally scrollable so a hall wider than the viewport never
-          squeezes seats — they stay tap-sized, the container scrolls instead. */}
+          squeezes seats below the 44px (h-11) touch-target minimum — the
+          container scrolls instead of the seats shrinking. */}
       <div className="overflow-x-auto pb-2">
         <div className="mx-auto flex w-fit min-w-full flex-col items-center gap-6 px-2">
           <div className="w-full max-w-md">
@@ -41,7 +42,7 @@ export function SeatMap({
             </p>
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2.5">
             {rows.map(([rowLabel, rowSeats]) => (
               <div key={rowLabel} className="flex items-center gap-3">
                 <span className="w-5 shrink-0 text-center font-mono text-xs text-muted-foreground">
@@ -50,7 +51,7 @@ export function SeatMap({
                 <div
                   className="grid gap-2"
                   style={{
-                    gridTemplateColumns: `repeat(${totalColumns}, minmax(1.9rem, 2.25rem))`,
+                    gridTemplateColumns: `repeat(${totalColumns}, minmax(2.75rem, 3rem))`,
                   }}
                 >
                   {rowSeats.map((seat) => (
@@ -94,7 +95,7 @@ function SeatButton({
       aria-label={ariaLabel(seat, selected)}
       style={{ gridColumn: `${seat.columnNumber} / span ${seat.columnSpan}` }}
       className={cn(
-        "flex h-8 items-center justify-center gap-0.5 rounded-lg text-[0.65rem] font-mono font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "flex h-11 items-center justify-center gap-0.5 rounded-lg text-xs font-mono font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         !disabled &&
           !selected &&
           "cursor-pointer border border-glass-border bg-glass-surface text-foreground/80 backdrop-blur-glass hover:border-primary/50 hover:text-foreground",
@@ -107,12 +108,12 @@ function SeatButton({
       )}
     >
       {seat.status === "LOCKED" ? (
-        <Lock className="size-3" />
+        <Lock className="size-3.5" />
       ) : seat.status === "BOOKED" ? (
-        <Check className="size-3" />
+        <Check className="size-3.5" />
       ) : (
         <>
-          {seat.seatType === "COUPLE" && <Heart className="size-2.5 fill-current" />}
+          {seat.seatType === "COUPLE" && <Heart className="size-3 fill-current" />}
           {seat.columnNumber}
         </>
       )}

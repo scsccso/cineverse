@@ -45,6 +45,78 @@
 | 动效 | framer-motion | 页面转场、按钮反馈、表单校验进出场动效 |
 | 表单校验 | react-hook-form + zod | |
 - 理由:要做 Apple 风高交互体验,这套组合在动效、组件质感上最省力
+- 设计 token、字体分工、组件复用与无障碍标准的完整记录见 1.5 节。
+
+---
+
+## 1.5 前端设计系统(Liquid Glass)
+
+> 下面几条原本分散记在本节(第 1 节)的技术栈表格备注,以及第 3 节 Phase 5
+> 前端补充里,这里整合成一节统一记录;那两处原文保留了简短提及 + 指向本节的
+> 链接,不做整段搬迁删除,避免 Phase 记录里的上下文断裂。
+
+- **设计语言定位**:参照 Apple 2025~2026 的 Liquid Glass 设计语言,核心是"高光
+  跟随指针动态移动",不是把静态渐变边框往卡片上一贴就算数的 glassmorphism
+  抄袭——`GlassCard`(`frontend/src/components/glass/glass-card.tsx`)的高光位置
+  通过 `--glow-x`/`--glow-y` 两个 CSS 自定义属性在 `pointermove` 时实时更新,
+  用 `radial-gradient(circle at var(--glow-x) var(--glow-y), ...)` 渲染,这是和
+  固定角度渐变的静态玻璃拟态本质上的区别。
+- **设计 token**(定义在 `frontend/src/app/globals.css` 的 `.dark` 选择器下——
+  暗色是唯一主题,这些 token 没有浅色变体):
+  - `--glass-surface: rgb(255 255 255 / 6%)` —— 卡片底色,极低不透明度白,
+    营造"透光而非发光"的玻璃质感
+  - `--glass-border: rgb(255 255 255 / 15%)` —— 卡片描边
+  - `--glass-highlight: rgb(255 255 255 / 35%)` —— 高光本体颜色,配合上面的
+    `radial-gradient` 在指针位置渲染出跟随移动的光斑
+  - 配套的 `--blur-glass: 20px`(`backdrop-blur-glass` 工具类)做的是真正的
+    背景模糊,不是叠一层半透明色蒙混视觉
+- **字体分工**(定义在 `frontend/src/app/layout.tsx`):
+  - **Clash Display**(标题,`--font-display`):Fontshare 出品,但它不在
+    `next/font/google` 目录、也没有发 npm 包——把 woff2 文件下载到
+    `src/app/fonts/` 自托管,用 `next/font/local` 加载,而不是在 `<head>` 里加
+    CDN `<link>`。这不是随手的性能优化,是修一个真 bug:`<link>` 不允许直接挂
+    在 `<html>` 下,浏览器会在 React hydrate 之前静默把它重新挂载到合法位置,
+    导致 server/client 渲染树对不上、抛 hydration 错误。自托管方式和
+    `next/font/google` 走同一套字体优化管线(子集化、避免 FOIT/FOUT),顺带
+    绕开了这个问题。
+  - **Inter**(正文,`--font-sans`):`next/font/google`,标准无衬线正文字体。
+  - **JetBrains Mono**(数据类文字——座位号、价格、token 展示,`--font-mono`):
+    `next/font/google`,等宽字体让数字对齐、易扫读。
+- **`GlassCard` 是全应用的 signature 组件**:以后新增卡片式 UI(电影卡、场次卡
+  等)默认基于它构建,不要另起一套玻璃拟态样式。**唯一的例外是座位图**
+  (`components/booking/seat-map.tsx`):一个影厅动辄上百个座位按钮,如果每个都
+  实例化完整的 `GlassCard`(每张卡自带一个 `pointermove` 监听 + framer-motion
+  光标跟随高光),等于同时挂上百个 `pointermove` 监听器,会拖慢交互——所以座位
+  按钮只复用 `--glass-*` 这套 CSS token 做视觉语言统一,不复用 `GlassCard`
+  组件本体,按钮上只留一个轻量的 `whileTap` 缩放反馈。这是密度驱动的性能例外,
+  不是"忘了用组件库"。
+- **已确立的无障碍原则**(以下几条是所有新页面的默认标准,不是三个页面各自
+  处理一次的一次性工作):
+  - **状态区分不只靠颜色**:边框样式 + 图标双重编码。座位图四态为例——可选:
+    实线玻璃描边;已选:主题金色描边 + 浅色填充;`LOCKED`:虚线描边 + 灰色
+    半透明 + 锁形图标;`BOOKED`:实心灰底、无描边 + 勾选图标。色弱用户也能靠
+    形状/图标分辨状态,不依赖颜色对比。
+  - **`prefers-reduced-motion` 两层降级(JS + CSS)**:`GlassCard` 用
+    `useReducedMotion()`(framer-motion 提供的 JS hook)在系统开启该设置时直接
+    跳过 `whileHover` 缩放和 `pointermove` 高光更新;同时高光图层本身还叠加了
+    Tailwind 的 `motion-reduce:hidden`(纯 CSS)作为第二层保险——即使某个代码
+    路径漏掉了 JS 判断,CSS 这层也会兜底隐藏动效,不依赖单一判断点。
+  - **触屏设备的 hover 效果降级**:`GlassCard` 用
+    `window.matchMedia("(hover: hover) and (pointer: fine)")` 判断当前输入
+    设备是否支持真正的悬停(排除触屏),不支持则高光固定显示在卡片左上角一个
+    默认位置,不强行模拟一个触屏上不存在的"指针跟随"效果。
+  - **最小点击热区 44×44px**(WCAG 2.5.5):2026-08-03 之前这条只在座位图和
+    部分表单/CTA 按钮上靠手动加 `h-11` 类名局部达标,不是设计系统的默认值,
+    验证时发现共享 `Button` 组件(`components/ui/button.tsx`)自身的
+    `default`/`lg` 尺寸变体其实还是 `h-8`(32px)/`h-9`(36px)——已修正:
+    两个变体的高度统一提到 `h-11`(44px),这样以后新写一个不带高度覆盖的
+    `<Button>` 也会自动达标;座位图按钮(不走共享 `Button` 组件,是独立的
+    `motion.button`)也从 `h-8` 一并提到 `h-11`,配合已有的横向滚动容器
+    (座位多的行在窄屏上滚动查看,而不是把按钮压缩到 44px 以下)。
+    `xs`/`sm`/`icon-xs`/`icon-sm` 这几个更小的尺寸变体保持原样——它们是有意
+    做小的次要工具型控件(导航栏的登出按钮、次要 nav 链接),不是这条标准的
+    疏漏。已跑过 `npm run build` + `npm run lint` 确认这次调整没有影响其他
+    页面(所有主要 CTA 按钮本来就带显式的 `h-11`/`h-12` 覆盖,不依赖这个默认值)。
 
 ---
 
@@ -78,14 +150,14 @@
   (`tools.jackson.*`,不是 `com.fasterxml.jackson.*`)。踩坑记录写进了对应模块的代码注释里。
 
 ### Phase 1 — 用户管理(User Management)✅ 完成于 2026-08-01
-详见第 4 节。CI 曾因为一个真实的 flaky test bug 红过一次(access token 缺 `jti`,
+CI 曾因为一个真实的 flaky test bug 红过一次(access token 缺 `jti`,
 同一秒内签发的两个 token 会完全相同)——已修复并补了回归测试,细节见
 `JwtService`/`JwtServiceTest`。
 
 关键决定:
 - **Token 存储方式**:access token 15min,纯内存(前端 React Context,不落地
   localStorage/sessionStorage,防 XSS);refresh token 7 天,**httpOnly cookie**
-  (`Path=/`,`SameSite=Strict`,`Secure` 视 profile 而定)。第 5 节的开放问题 #2
+  (`Path=/`,`SameSite=Strict`,`Secure` 视 profile 而定)。第 4 节的开放问题 #2
   已按此定案。
 - **Token rotation**:每次 `/refresh` 旧 refresh token 立即标记 `revoked`,下发新
   的一对 token,不是简单延期。
@@ -95,7 +167,7 @@
   scheme+eTLD+1 算,不看端口——`localhost:3000` 和 `localhost:8081` 是跨源但
   同站。
 - **前端框架**:确认用 Next.js 16(App Router + Turbopack),不是 Vue/纯HTML。
-  第 5 节开放问题 #1 已按此定案。
+  第 4 节开放问题 #1 已按此定案。
 
 ### Phase 2 — 影片管理(Movie Management)✅ 完成于 2026-08-02
 - 电影 CRUD(仅 ADMIN)、genre、trailer 链接、rating、poster 图片存储(先本地/后 S3)
@@ -181,7 +253,7 @@
   (公开)+ `POST/DELETE/GET /api/v1/bookings`(需登录,不限角色)
 
 关键决定:
-- **前端轮询,不上 WebSocket**:第 5 节开放问题 #3 已按此定案。MVP 阶段轮询
+- **前端轮询,不上 WebSocket**:第 4 节开放问题 #3 已按此定案。MVP 阶段轮询
   `GET /api/v1/showtimes/{id}/seats` 足够,避免过早引入长连接的复杂度(连接管理、
   广播、断线重连)。以后真要做实时推送,轮询接口的响应格式不用改,只是多一条
   推送通道。
@@ -230,16 +302,13 @@ CASCADE"的错误。
   "请在 5 分钟内支付" 倒计时页,或者倒计时到期进入"已过期"页,轮询立刻停止
   (没必要在这两个屏幕上还请求座位状态);返回选座页时才恢复轮询,同时立刻
   触发一次手动刷新。
-- **座位视觉状态的区分逻辑**(`components/booking/seat-map.tsx`):四种状态
-  用"边框样式 + 图标"双重编码,不是只靠颜色区分(色弱也能分辨)——
-  可选:玻璃卡片描边;已选:主题金色描边 + 浅色填充;LOCKED(别人正在选,
-  暂时锁定):虚线边框 + 灰色半透明 + 一个小锁图标(替换掉座位号数字);
-  BOOKED(已成交):实心灰色填充、无边框 + 一个勾选图标。特意没有直接复用
-  `GlassCard`(它给每张卡片都挂了 pointermove 监听 + framer-motion 光标跟随
-  高光,一个影厅动辄上百个座位按钮,每个都挂一份等于上百个 pointermove
-  监听器,会拖慢交互),而是用了同一套 `--glass-*` CSS token 做视觉语言复用,
-  只在按钮上留了一个轻量的 `whileTap` 缩放反馈。情侣座额外叠加一个心形图标
-  常驻显示(不受状态影响),和"占 2 格宽"一起提示这是情侣座。
+- **座位视觉状态的区分逻辑**(`components/booking/seat-map.tsx`):四种状态用
+  "边框样式 + 图标"双重编码——可选:玻璃卡片描边;已选:主题金色描边 + 浅色
+  填充;LOCKED(别人正在选,暂时锁定):虚线边框 + 灰色半透明 + 一个小锁图标
+  (替换掉座位号数字);BOOKED(已成交):实心灰色填充、无边框 + 一个勾选图标。
+  情侣座额外叠加一个心形图标常驻显示(不受状态影响),和"占 2 格宽"一起提示
+  这是情侣座。这条编码原则、座位按钮不复用 `GlassCard` 的性能考量、以及
+  44×44px 点击热区的达标情况,统一记录在 1.5 节,这里不重复。
 - **座位选择冲突(409)处理:不解析错误信息里的座位 UUID,而是重新拉取一次
   座位状态并跟当前选择做 diff**——`SeatUnavailableException` 的 message 只在
   Redis 加锁失败时精确到 1 个座位 id,但在数据库预检查阶段命中时可能一次列出
@@ -286,60 +355,7 @@ CASCADE"的错误。
 
 ---
 
-## 4. 当前冲刺详情:User Management(Login 优先)
-
-### 4.1 范围边界(这次冲刺只做这些)
-- 用户注册(邮箱 + 密码)
-- 用户登录(JWT:access token 15min + refresh token 7天,存 httpOnly cookie 或前端安全存储待定)
-- Refresh token 轮换(每次刷新旧的失效,防止token被盗用后一直有效)
-- 角色区分:CUSTOMER / ADMIN(种子数据里手动插入一个admin)
-- 密码用 BCrypt 加密存储
-- 登出(refresh token 加入 Redis 黑名单)
-
-### 4.2 暂不做(明确排除,避免范围蔓延)
-- 邮箱验证(email verification)——先不做,注册即可用,标注为"生产环境需要"
-- 忘记密码/重置密码流程——放到本模块的 v2 迭代
-- 第三方登录(Google/Facebook OAuth)——如果时间充裕再加,面试加分但非必须
-- 会员等级(Membership tier)——这是Phase 8之后的事,现在只做基础角色
-
-### 4.3 数据表设计(草案)
-```
-users
-  id (UUID, PK)
-  email (unique, not null)
-  password_hash (not null)
-  role (enum: CUSTOMER, ADMIN)
-  full_name
-  created_at
-  updated_at
-
-refresh_tokens
-  id (UUID, PK)
-  user_id (FK)
-  token_hash
-  expires_at
-  revoked (boolean)
-```
-
-### 4.4 API 草案
-```
-POST   /api/v1/auth/register
-POST   /api/v1/auth/login
-POST   /api/v1/auth/refresh
-POST   /api/v1/auth/logout
-GET    /api/v1/users/me     (需要认证)
-```
-
-### 4.5 完成定义(Definition of Done)✅ 全部完成
-- [x] 所有 endpoint 有 Swagger 文档
-- [x] 密码错误、邮箱重复注册等异常情况有明确错误码
-- [x] 单元测试覆盖 Service 层核心逻辑(密码校验、token生成/校验)
-- [x] 集成测试(Testcontainers)覆盖 register → login → 访问受保护接口 全流程
-- [x] README 更新:如何本地启动、如何跑测试
-
----
-
-## 5. 待你确认的开放问题(Open Decisions)
+## 4. 待你确认的开放问题(Open Decisions)
 
 1. ~~前端框架:React+Next.js 是我的假设,你要用别的吗?~~ **已解决**:确认用
    Next.js 16(App Router + Turbopack + React 19.2)。见第 3 节 Phase 1。
@@ -353,27 +369,13 @@ GET    /api/v1/users/me     (需要认证)
 
 ---
 
-## 6. 已知的环境注意事项
+## 5. 已知的环境注意事项
 
-- **8080 端口冲突**:本机(开发机)8080 被 Oracle 的 `TNSLSNR.EXE`(TNS Listener,
-  和本项目无关的系统服务)占用。后端本地开发固定改用 **8081**
-  (`SERVER_PORT=8081 mvn spring-boot:run`),前端 `frontend/.env.local` 里的
-  `NEXT_PUBLIC_API_BASE_URL` 相应指向 `http://localhost:8081`。这个 `.env.local`
-  不进 git,换一台没有这个冲突的机器直接用 `.env.example` 里的 8080 默认值即可。
-- **本机 shell 里裸跑 `mvn spring-boot:run` 可能不会用 JDK 25**:本机装了不止
-  一个 JDK,新开的 shell 里 `mvn` 解析到的 `java` 不一定是 Eclipse Temurin 25——
-  症状是启动时报 `UnsupportedClassVersionError`(class file version 69,当前
-  JRE 只认到 61,也就是 Java 17)。跑之前先 `export JAVA_HOME="C:\Program
-  Files\Eclipse Adoptium\jdk-25.0.4.7-hotspot"` 再 `export
-  PATH="$JAVA_HOME/bin:$PATH"`。另外,如果本地已经有一个跑了很久的后端进程,
-  它是用启动那一刻的代码跑的——中途拉了新 migration(比如 Phase 5 的
-  `V9__bookings.sql`)不会自动生效,`flyway_schema_history` 表停在旧版本,
-  `GET .../seats` 这类新接口会直接 500;重启一次后端进程让 Flyway 重新跑一遍
-  就好。
+环境踩坑记录见 [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md)。
 
 ---
 
-## 7. 开发规范
+## 6. 开发规范
 
 - **分支命名**:`feature/user-management-login`、`fix/xxx`
 - **Commit规范**:Conventional Commits(`feat:`, `fix:`, `test:`, `docs:`, `refactor:`)

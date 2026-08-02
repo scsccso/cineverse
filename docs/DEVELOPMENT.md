@@ -12,6 +12,16 @@
   `NEXT_PUBLIC_API_BASE_URL` 相应指向 `http://localhost:8081`。换一台没有这个
   冲突的机器,直接用默认的 8080 即可(把 `SERVER_PORT=8081` 去掉,
   `frontend/.env.local` 也改回 8080)。
+- **本机 shell 里裸跑 `mvn spring-boot:run` 可能不会用 JDK 25**:本机装了不止
+  一个 JDK,新开的 shell 里 `mvn` 解析到的 `java` 不一定是 Eclipse Temurin 25——
+  症状是启动时报 `UnsupportedClassVersionError`(class file version 69,当前
+  JRE 只认到 61,也就是 Java 17)。跑之前先 `export JAVA_HOME="C:\Program
+  Files\Eclipse Adoptium\jdk-25.0.4.7-hotspot"` 再 `export
+  PATH="$JAVA_HOME/bin:$PATH"`。另外,如果本地已经有一个跑了很久的后端进程,
+  它是用启动那一刻的代码跑的——中途拉了新 migration(比如 Phase 5 的
+  `V9__bookings.sql`)不会自动生效,`flyway_schema_history` 表停在旧版本,
+  `GET .../seats` 这类新接口会直接 500;重启一次后端进程让 Flyway 重新跑一遍
+  就好。
 
 ## 环境配置(Profiles)
 
