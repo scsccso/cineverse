@@ -3,6 +3,7 @@ package com.cineverse.backend.common.exception;
 import com.cineverse.backend.auth.exception.DuplicateEmailException;
 import com.cineverse.backend.auth.exception.InvalidCredentialsException;
 import com.cineverse.backend.auth.exception.InvalidRefreshTokenException;
+import com.cineverse.backend.showtime.exception.ShowtimeConflictException;
 import com.cineverse.backend.storage.exception.InvalidFileException;
 import java.time.Instant;
 import java.util.stream.Collectors;
@@ -56,6 +57,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ErrorResponse> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
         return build(HttpStatus.BAD_REQUEST, "Uploaded file exceeds the maximum allowed size");
+    }
+
+    @ExceptionHandler(ShowtimeConflictException.class)
+    public ResponseEntity<ErrorResponse> handleShowtimeConflict(ShowtimeConflictException ex) {
+        return build(HttpStatus.CONFLICT, ex.getMessage());
     }
 
     @ExceptionHandler(ResponseStatusException.class)

@@ -53,9 +53,10 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/uploads/**", "/images/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/movies/**", "/api/v1/genres/**",
-                                "/api/v1/cinemas/**", "/api/v1/halls/**").permitAll()
+                                "/api/v1/cinemas/**", "/api/v1/halls/**", "/api/v1/showtimes/**").permitAll()
                         .requestMatchers("/api/v1/movies/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/cinemas/**").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/showtimes/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(restAuthenticationEntryPoint)

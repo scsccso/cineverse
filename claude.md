@@ -2,7 +2,7 @@
 
 > 本文件是本项目的唯一真相来源(single source of truth)。每次开新的 Claude Code session,先读这份文件。
 > 更新时间:2026-08(随项目迭代持续更新)
-> 当前进度:Phase 0~3 已完成,Phase 4(场次排期)未开始 —— 详见第 3 节。
+> 当前进度:Phase 0~4 已完成,Phase 5(选座/订票)未开始 —— 详见第 3 节。
 
 ---
 
@@ -135,8 +135,27 @@
   `totalColumns`,前端不用再单独请求一次 hall 详情才能确定网格尺寸。现在把格式
   定好,是为了 Phase 5 真正做选座渲染时不用回头改 API 形状。
 
-### Phase 4 — 场次排期(Showtime Scheduling)
+### Phase 4 — 场次排期(Showtime Scheduling)✅ 完成于 2026-08-02
 - 电影 + 影厅 + 时间段绑定,校验同一影厅时间段不冲突(含清场缓冲时间)
+
+关键决定:
+- **20 分钟清场缓冲**:同一影厅两个场次之间,前一场 `end_time` + 20 分钟必须
+  `<=` 后一场 `start_time`,否则视为冲突拒绝创建。`end_time` 本身不含这个
+  缓冲——它就是 `start_time + movie.duration_minutes`,纯粹由电影时长算出来,
+  不接受 Admin 手动填写(避免人为输入错误导致数据不一致)。缓冲只在冲突校验
+  时临时应用在区间末端(`[start, end+buffer)`),不落库、不污染 `end_time` 字段
+  语义。边界值(正好间隔 20 分钟)判定为**不冲突**——校验用的是严格小于
+  (`isBefore`),不是 `<=`。
+- **冲突校验放应用层,不用数据库 exclusion constraint**:同一 hall 的所有既有
+  场次先用 `findByHallId` 取出来,再在 Java 里逐条跑重叠判断
+  (`ShowtimeOverlapChecker`,纯静态方法、无依赖,方便脱离 Testcontainers 单独
+  测边界条件)。换来的是更灵活、错误信息可读性更好(能明确说出和哪一条已有
+  场次冲突),代价是量级变大后需要换成更窄的时间窗口查询——MVP 阶段这个
+  tradeoff 是划算的,先不做过早优化。
+- **没有更新场次的 API**:排期填错了只能删除重建,不支持局部改
+  `start_time`——这类"改一个字段,连带需要重新校验冲突、重算 end_time"的操作
+  容易埋数据不一致的 bug,是有意收窄的 MVP 边界,和 Phase 3 座位布局"不可局部
+  修改"的边界是同一个设计思路。
 
 ### Phase 5 — 选座/订票(Seat Booking)⚠️ 核心难点
 - 座位状态机:`AVAILABLE → LOCKED(Redis, TTL 5min) → CONFIRMED / EXPIRED / CANCELLED`

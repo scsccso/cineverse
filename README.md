@@ -275,6 +275,55 @@ curl -s -X POST http://localhost:8081/api/v1/movies \
   -d '{"title":"Interstellar","durationMinutes":169,"contentRating":"PG-13","status":"NOW_PLAYING","genreIds":[]}' | jq
 ```
 
+## Showtime(Phase 4)
+
+浏览类接口（`GET`）公开，不需要 token；创建/删除需要 `ROLE_ADMIN`。没有更新
+场次的 API——排期填错了删除重建，不支持局部改 `start_time`。`endTime` 由后端
+根据 `movie.durationMinutes` 自动算出，请求体里不接受手动传入。
+
+```bash
+ACCESS_TOKEN="<用 admin@cineverse.local / Admin@12345 登录拿到的 accessToken>"
+HALL_ID="21111111-1111-1111-1111-111111111111"   # 种子数据 Hall 1
+
+# 先创建一部电影，拿到 movieId（种子数据没有预置电影）
+MOVIE_ID=$(curl -s -X POST http://localhost:8081/api/v1/movies \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Interstellar","durationMinutes":169,"contentRating":"PG-13","status":"NOW_PLAYING","genreIds":[]}' \
+  | jq -r '.id')
+
+# 创建场次——只传 startTime，不传 endTime
+curl -s -X POST http://localhost:8081/api/v1/showtimes \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"movieId\":\"$MOVIE_ID\",\"hallId\":\"$HALL_ID\",\"startTime\":\"2026-09-01T10:00:00Z\",\"price\":25.00}" | jq
+
+# 浏览（公开）：按电影 + 日期筛选
+curl -s "http://localhost:8081/api/v1/showtimes?movieId=$MOVIE_ID&date=2026-09-01" | jq
+
+# 详情（公开，内联 movie/hall 基本信息）
+curl -s http://localhost:8081/api/v1/showtimes/<上一步返回的 id> | jq
+```
+
+### 验证 20 分钟清场缓冲冲突（409）
+
+复用上面创建的 `$MOVIE_ID`（时长 169 分钟，第一场 `10:00` 开始，`endTime` 自动
+算出是 `12:49`）。再创建一场只间隔 10 分钟的场次，应该被拒绝：
+
+```bash
+curl -i -X POST http://localhost:8081/api/v1/showtimes \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"movieId\":\"$MOVIE_ID\",\"hallId\":\"$HALL_ID\",\"startTime\":\"2026-09-01T12:59:00Z\",\"price\":25.00}"
+```
+
+预期 `409 Conflict`，`message` 里会明确指出是和 Hall 1 的哪一场冲突。把
+`startTime` 换成 `2026-09-01T13:09:00Z`（间隔正好 20 分钟）再跑一次，则会
+`201 Created`——这正是清场缓冲的边界值。
+
+未登录 POST 这些接口会得到 `401`（匿名）；登录了但角色是 `CUSTOMER` 会得到
+`403`（已认证但角色不对）。
+
 ## 路线图
 
 完整的 Phase 0 ~ Phase 8 模块规划、每个 Phase 的完成定义(Definition of Done)见 [`CLAUDE.md`](./CLAUDE.md) 第 3、4 节。
