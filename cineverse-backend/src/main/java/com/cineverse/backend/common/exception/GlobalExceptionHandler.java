@@ -3,6 +3,7 @@ package com.cineverse.backend.common.exception;
 import com.cineverse.backend.auth.exception.DuplicateEmailException;
 import com.cineverse.backend.auth.exception.InvalidCredentialsException;
 import com.cineverse.backend.auth.exception.InvalidRefreshTokenException;
+import com.cineverse.backend.movie.exception.MovieHasScheduledShowtimesException;
 import com.cineverse.backend.showtime.exception.ShowtimeConflictException;
 import com.cineverse.backend.storage.exception.InvalidFileException;
 import java.time.Instant;
@@ -61,6 +62,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ShowtimeConflictException.class)
     public ResponseEntity<ErrorResponse> handleShowtimeConflict(ShowtimeConflictException ex) {
+        return build(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(MovieHasScheduledShowtimesException.class)
+    public ResponseEntity<ErrorResponse> handleMovieHasScheduledShowtimes(MovieHasScheduledShowtimesException ex) {
         return build(HttpStatus.CONFLICT, ex.getMessage());
     }
 

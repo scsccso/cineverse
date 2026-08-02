@@ -5,10 +5,12 @@ import com.cineverse.backend.movie.dto.MovieResponse;
 import com.cineverse.backend.movie.entity.Genre;
 import com.cineverse.backend.movie.entity.Movie;
 import com.cineverse.backend.movie.entity.MovieStatus;
+import com.cineverse.backend.movie.exception.MovieHasScheduledShowtimesException;
 import com.cineverse.backend.movie.mapper.MovieMapper;
 import com.cineverse.backend.movie.repository.GenreRepository;
 import com.cineverse.backend.movie.repository.MovieRepository;
 import com.cineverse.backend.movie.repository.MovieSpecifications;
+import com.cineverse.backend.showtime.repository.ShowtimeRepository;
 import com.cineverse.backend.storage.StorageService;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -30,16 +32,19 @@ public class MovieService {
     private final GenreRepository genreRepository;
     private final MovieMapper movieMapper;
     private final StorageService storageService;
+    private final ShowtimeRepository showtimeRepository;
 
     public MovieService(
             MovieRepository movieRepository,
             GenreRepository genreRepository,
             MovieMapper movieMapper,
-            StorageService storageService) {
+            StorageService storageService,
+            ShowtimeRepository showtimeRepository) {
         this.movieRepository = movieRepository;
         this.genreRepository = genreRepository;
         this.movieMapper = movieMapper;
         this.storageService = storageService;
+        this.showtimeRepository = showtimeRepository;
     }
 
     @Transactional(readOnly = true)
@@ -74,6 +79,14 @@ public class MovieService {
     @Transactional
     public void delete(UUID id) {
         Movie movie = findMovieOrThrow(id);
+        // Checked here (not left to the FK) so a mis-click gets a clean 409
+        // instead of a raw DB constraint error; the showtimes.movie_id FK is
+        // ON DELETE RESTRICT (V8) as a defense-in-depth backstop, not the
+        // primary guard — deleting a movie must never cascade-delete its
+        // showtimes.
+        if (showtimeRepository.existsByMovieId(id)) {
+            throw new MovieHasScheduledShowtimesException();
+        }
         storageService.delete(movie.getPosterUrl());
         storageService.delete(movie.getBackdropUrl());
         movieRepository.delete(movie);

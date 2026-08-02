@@ -13,6 +13,9 @@ import com.cineverse.backend.auth.dto.LoginRequest;
 import com.cineverse.backend.auth.dto.RegisterRequest;
 import com.cineverse.backend.movie.dto.MovieRequest;
 import com.cineverse.backend.movie.entity.MovieStatus;
+import com.cineverse.backend.showtime.dto.CreateShowtimeRequest;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -45,6 +48,8 @@ import tools.jackson.databind.ObjectMapper;
 @AutoConfigureMockMvc
 @Testcontainers
 class MovieAdminFlowIntegrationTest {
+
+    private static final String SEEDED_HALL_ID = "21111111-1111-1111-1111-111111111111"; // Hall 1, from V6 seed
 
     @Container
     @ServiceConnection
@@ -110,6 +115,30 @@ class MovieAdminFlowIntegrationTest {
 
         mockMvc.perform(get("/api/v1/movies/{id}", movieId))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void deletingAMovieWithAScheduledShowtimeIsRejectedWith409() throws Exception {
+        String accessToken = loginAsAdmin();
+        UUID genreId = firstGenreId();
+        UUID movieId = createMovie(accessToken, "Booked Solid " + UUID.randomUUID(), genreId);
+
+        mockMvc.perform(post("/api/v1/showtimes")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateShowtimeRequest(
+                                movieId, UUID.fromString(SEEDED_HALL_ID),
+                                Instant.parse("2026-09-10T10:00:00Z"), new BigDecimal("25.00")))))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(delete("/api/v1/movies/{id}", movieId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("scheduled showtimes")));
+
+        // Untouched — the rejected delete must not have removed the movie.
+        mockMvc.perform(get("/api/v1/movies/{id}", movieId))
+                .andExpect(status().isOk());
     }
 
     @Test

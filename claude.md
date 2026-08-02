@@ -156,6 +156,21 @@
   `start_time`——这类"改一个字段,连带需要重新校验冲突、重算 end_time"的操作
   容易埋数据不一致的 bug,是有意收窄的 MVP 边界,和 Phase 3 座位布局"不可局部
   修改"的边界是同一个设计思路。
+- **电影/影厅 - 场次交界处:删除电影/影厅必须走 RESTRICT,不能级联**(2026-08-02
+  补充,属于事后发现的交界处漏洞,不是当时就想到的):V7 建表时 `movie_id`/
+  `hall_id` 两个外键随手写成了 `ON DELETE CASCADE`,没有认真想过——这意味着
+  Admin 删除一部电影会连带把它所有的排期场次一起悄悄删掉,这对订票系统来说
+  代价太大(如果场次已经产生订单,级联删除等于销毁交易记录)。已通过 V8
+  migration 改成显式的 `ON DELETE RESTRICT`,并且**不是只依赖数据库报错**——
+  `MovieService.delete()` 会先查 `ShowtimeRepository.existsByMovieId`,如果电影
+  还有排期中的场次,直接返回 409("Cannot delete this movie: it still has
+  scheduled showtimes. Delete those showtimes first."),FK 上的 RESTRICT 只是
+  兜底(防止绕过 Service 层的直接 SQL/未来其他代码路径)。Hall 目前还没有
+  delete API(Phase 3 边界),所以 `hall_id` 这个交界处理论上还触发不到,但
+  V8 已经把 FK 一并改成了 RESTRICT,先做到"失败即安全";以后如果给 Hall 加
+  delete 功能,`HallService` 必须照抄 `MovieService` 这个"先查 showtime 存在性
+  再删"的模式,不能只靠 FK 报错兜底(否则前端拿到的是裸 DB 异常,不是干净的
+  409)。
 
 ### Phase 5 — 选座/订票(Seat Booking)⚠️ 核心难点
 - 座位状态机:`AVAILABLE → LOCKED(Redis, TTL 5min) → CONFIRMED / EXPIRED / CANCELLED`
