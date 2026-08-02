@@ -3,6 +3,13 @@ import type { ErrorResponse } from "./types";
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
 
+/** Poster/backdrop URLs come back as backend-relative paths (e.g. "/uploads/x.jpg"
+ * or the placeholder "/images/no-poster.svg") — they're served by the Spring
+ * Boot app, not this frontend, so they need the API origin prefixed. */
+export function resolveMediaUrl(path: string): string {
+  return /^https?:\/\//.test(path) ? path : `${API_BASE_URL}${path}`;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: number;
@@ -27,6 +34,11 @@ export async function apiFetch<T>(
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...rest,
+    // Movies/showtimes/etc. change independently of this app's build —
+    // without this, Server Component GETs with no other request-time API
+    // (cookies/headers/searchParams) get statically prerendered at build
+    // time and would freeze on stale data until the next deploy.
+    cache: "no-store",
     // The refresh token only ever travels as an httpOnly cookie — without
     // credentials: "include" the browser neither sends it cross-origin nor
     // accepts the Set-Cookie the backend responds with.

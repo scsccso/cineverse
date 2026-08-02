@@ -1,75 +1,60 @@
-"use client";
+import { listMovies } from "@/lib/api/movies";
+import type { MovieResponse } from "@/lib/api/types";
+import { HeroCarousel } from "@/components/home/hero-carousel";
+import { MovieCard } from "@/components/movies/movie-card";
 
-import Link from "next/link";
-import { motion } from "framer-motion";
-import { useAuth } from "@/lib/auth/auth-context";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-
-const EASE_APPLE = [0.22, 1, 0.36, 1] as const;
-
-export default function Home() {
-  const { status } = useAuth();
+export default async function Home() {
+  const [nowPlaying, comingSoon] = await Promise.all([
+    listMovies("NOW_PLAYING"),
+    listMovies("COMING_SOON"),
+  ]);
 
   return (
-    <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-4xl flex-col items-center justify-center px-6 text-center">
-      <motion.p
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: EASE_APPLE }}
-        className="mb-4 text-sm font-medium tracking-[0.2em] text-primary uppercase"
-      >
-        欢迎来到
-      </motion.p>
-      <motion.h1
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.05, ease: EASE_APPLE }}
-        className="text-5xl font-semibold tracking-tight text-balance sm:text-6xl md:text-7xl"
-      >
-        属于你的<span className="text-primary">观影世界</span>
-      </motion.h1>
-      <motion.p
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.15, ease: EASE_APPLE }}
-        className="mt-6 max-w-xl text-lg text-muted-foreground"
-      >
-        选座购票、影院信息、个人观影记录 — CineVerse 正在建设中,当前版本已开放账号注册与登录。
-      </motion.p>
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.25, ease: EASE_APPLE }}
-        className="mt-10 flex flex-col gap-3 sm:flex-row"
-      >
-        {status === "authenticated" ? (
-          <Link
-            href="/profile"
-            className={cn(buttonVariants({ size: "lg" }), "h-12 px-8 text-base")}
-          >
-            前往我的账户
-          </Link>
-        ) : (
-          <>
-            <Link
-              href="/register"
-              className={cn(buttonVariants({ size: "lg" }), "h-12 px-8 text-base")}
-            >
-              立即注册
-            </Link>
-            <Link
-              href="/login"
-              className={cn(
-                buttonVariants({ variant: "outline", size: "lg" }),
-                "h-12 px-8 text-base",
-              )}
-            >
-              登录
-            </Link>
-          </>
-        )}
-      </motion.div>
+    <>
+      <HeroCarousel movies={nowPlaying.content.slice(0, 5)} />
+      <div className="mx-auto max-w-6xl space-y-16 px-6 py-16">
+        <MovieSection
+          id="now-playing"
+          title="正在热映"
+          movies={nowPlaying.content}
+          emptyLabel="暂无正在热映的影片"
+        />
+        <MovieSection
+          id="coming-soon"
+          title="即将上映"
+          movies={comingSoon.content}
+          emptyLabel="暂无即将上映的影片"
+        />
+      </div>
+    </>
+  );
+}
+
+function MovieSection({
+  id,
+  title,
+  movies,
+  emptyLabel,
+}: {
+  id: string;
+  title: string;
+  movies: MovieResponse[];
+  emptyLabel: string;
+}) {
+  return (
+    <section id={id} className="scroll-mt-24">
+      <h2 className="font-display text-2xl font-semibold tracking-tight">
+        {title}
+      </h2>
+      {movies.length === 0 ? (
+        <p className="mt-6 text-muted-foreground">{emptyLabel}</p>
+      ) : (
+        <div className="mt-6 grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {movies.map((movie) => (
+            <MovieCard key={movie.id} movie={movie} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

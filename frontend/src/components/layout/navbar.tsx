@@ -8,7 +8,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { cn } from "@/lib/utils";
 
-const placeholderLinks = ["正在热映", "即将上映", "影院"];
+const movieSectionLinks = [
+  { label: "正在热映", href: "/#now-playing" },
+  { label: "即将上映", href: "/#coming-soon" },
+];
 
 export function Navbar() {
   const { status, user } = useAuth();
@@ -25,16 +28,22 @@ export function Navbar() {
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">
-          {placeholderLinks.map((label) => (
-            <span
+          {movieSectionLinks.map(({ label, href }) => (
+            <Link
               key={label}
-              aria-disabled
-              title="即将推出"
-              className="cursor-not-allowed text-sm text-muted-foreground/50"
+              href={href}
+              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               {label}
-            </span>
+            </Link>
           ))}
+          <span
+            aria-disabled
+            title="即将推出"
+            className="cursor-not-allowed text-sm text-muted-foreground/50"
+          >
+            影院
+          </span>
         </nav>
 
         <div className="flex items-center gap-3">

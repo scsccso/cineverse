@@ -8,8 +8,13 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-display: var(--font-display);
+  --font-heading: var(--font-display);
+  --color-glass-surface: var(--glass-surface);
+  --color-glass-border: var(--glass-border);
+  --color-glass-highlight: var(--glass-highlight);
+  --blur-glass: 20px;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -87,8 +92,10 @@
   /* CineVerse dark theme — this is the only theme the app ships (dark is
      mandatory, not a toggle). Accent is a warm cinema-gold, used for CTAs,
      badges, and focus rings so brand color and "interactive" read as one
-     signal. */
-  --background: oklch(0.12 0 0);
+     signal. Liquid Glass design tokens (--glass-*) layer translucent
+     surfaces on top of this base for movie/showtime cards — see
+     components/glass/glass-card.tsx. */
+  --background: #0a0a0c;
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.16 0 0);
   --card-foreground: oklch(0.985 0 0);
@@ -99,7 +106,10 @@
   --secondary: oklch(0.22 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.2 0 0);
-  --muted-foreground: oklch(0.65 0 0);
+  --muted-foreground: #a1a1aa;
+  --glass-surface: rgb(255 255 255 / 6%);
+  --glass-border: rgb(255 255 255 / 15%);
+  --glass-highlight: rgb(255 255 255 / 35%);
   --accent: rgb(244 196 48 / 14%);
   --accent-foreground: #f4c430;
   --destructive: oklch(0.7 0.19 23);
