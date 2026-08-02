@@ -1,33 +1,48 @@
-import Link from "next/link";
-import { GlassCard } from "@/components/glass/glass-card";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { notFound } from "next/navigation";
+import { ApiError } from "@/lib/api/client";
+import { getShowtime, getShowtimeSeats } from "@/lib/api/showtimes";
+import type { ShowtimeResponse } from "@/lib/api/types";
+import { SeatPicker } from "@/components/booking/seat-picker";
+import { formatShowDate, formatShowTime } from "@/lib/format";
 
-// Placeholder only: real seat locking/selection is Phase 5. This page exists
-// so the movie -> showtime -> seats path is clickable end to end today.
-export default async function SeatSelectionPlaceholderPage({
+async function findShowtime(id: string): Promise<ShowtimeResponse | null> {
+  try {
+    return await getShowtime(id);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export default async function SeatSelectionPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
 
+  const showtime = await findShowtime(id);
+  if (!showtime) {
+    notFound();
+  }
+
+  // Fetched server-side purely for a warm first paint — the client component
+  // takes it over from here and re-fetches on its own polling interval.
+  const seatData = await getShowtimeSeats(id);
+
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-lg flex-col items-center justify-center px-6 py-16 text-center">
-      <GlassCard className="p-8">
-        <h1 className="font-display text-2xl font-semibold tracking-tight">
-          选座功能 Phase 5 开发中
-        </h1>
-        <p className="mt-3 text-muted-foreground">
-          座位选择与锁定正在开发中,敬请期待。
-        </p>
-        <Link
-          href={`/showtimes/${id}`}
-          className={cn(buttonVariants({ variant: "outline" }), "mt-8")}
-        >
-          返回场次详情
-        </Link>
-      </GlassCard>
+    <div className="mx-auto max-w-5xl px-4 pt-10 sm:px-6">
+      <SeatPicker
+        showtimeId={id}
+        movieTitle={showtime.movie.title}
+        hallLabel={`${showtime.hall.name} · ${showtime.hall.cinemaName}`}
+        showDate={formatShowDate(showtime.startTime)}
+        showTime={formatShowTime(showtime.startTime)}
+        pricePerSeat={showtime.price}
+        initialSeatData={seatData}
+      />
     </div>
   );
 }

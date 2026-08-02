@@ -14,7 +14,12 @@ import { AnimatedFieldError } from "@/components/motion/animated-field-error";
 import { AnimatedFormBanner } from "@/components/motion/animated-form-banner";
 import { SubmitProgressBar } from "@/components/motion/submit-progress-bar";
 
-export function LoginForm() {
+interface LoginFormProps {
+  /** Where to send the user after a successful login — defaults to /profile. */
+  redirectTo?: string;
+}
+
+export function LoginForm({ redirectTo = "/profile" }: LoginFormProps) {
   const { login } = useAuth();
   const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
@@ -31,7 +36,7 @@ export function LoginForm() {
     setFormError(null);
     try {
       await login(values);
-      router.push("/profile");
+      router.push(redirectTo);
     } catch (error) {
       // 401 covers both "no such email" and "wrong password" — the backend
       // deliberately returns the same generic message for both so this UI

@@ -95,3 +95,63 @@ export interface ShowtimeResponse {
   createdAt: string;
   updatedAt: string;
 }
+
+export type SeatType = "STANDARD" | "COUPLE";
+
+/** Live per-seat status from the seat picker's polling endpoint — absent booking means AVAILABLE. */
+export type SeatStatus = "AVAILABLE" | "LOCKED" | "BOOKED";
+
+export interface SeatStatusEntry {
+  seatId: string;
+  rowLabel: string;
+  /** Starting column; for COUPLE seats this is the left of the pair. */
+  columnNumber: number;
+  /** How many physical grid columns this seat occupies (STANDARD=1, COUPLE=2). */
+  columnSpan: number;
+  seatType: SeatType;
+  status: SeatStatus;
+}
+
+/** GET /api/v1/showtimes/{id}/seats — polled every few seconds by the seat picker. */
+export interface ShowtimeSeatsResponse {
+  showtimeId: string;
+  hallId: string;
+  hallName: string;
+  totalRows: number;
+  totalColumns: number;
+  seats: SeatStatusEntry[];
+}
+
+export interface CreateBookingRequest {
+  showtimeId: string;
+  seatIds: string[];
+}
+
+export type BookingStatus = "PENDING" | "CONFIRMED" | "EXPIRED" | "CANCELLED";
+
+export interface BookingSeatResponse {
+  seatId: string;
+  rowLabel: string;
+  columnNumber: number;
+  seatType: SeatType;
+  /** Price at the moment of booking — later showtime price changes never affect it. */
+  priceAtBooking: number;
+}
+
+export interface BookingShowtimeSummary {
+  id: string;
+  movieTitle: string;
+  hallName: string;
+  startTime: string;
+}
+
+export interface BookingResponse {
+  id: string;
+  status: BookingStatus;
+  totalPrice: number;
+  /** End of the 5-minute hold window — past this, a PENDING booking is lazily expired on next read. */
+  expiresAt: string;
+  createdAt: string;
+  showtime: BookingShowtimeSummary;
+  seats: BookingSeatResponse[];
+}

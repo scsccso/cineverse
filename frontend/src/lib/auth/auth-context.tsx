@@ -34,6 +34,10 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   /** Calls /api/v1/users/me, transparently refreshing the access token once on a 401. */
   fetchCurrentUser: () => Promise<UserResponse>;
+  /** Runs fn with a valid bearer token, transparently refreshing once on a 401 — the
+   * same retry logic fetchCurrentUser uses, generalized for other authenticated calls
+   * (e.g. bookings) that don't have their own dedicated context method. */
+  callAuthorized: <T>(fn: (accessToken: string) => Promise<T>) => Promise<T>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -115,27 +119,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [clearSession]);
 
-  const fetchCurrentUser = useCallback(async (): Promise<UserResponse> => {
-    const requestWithToken = (token: string) => getCurrentUser(token);
-
-    if (accessTokenRef.current) {
-      try {
-        return await requestWithToken(accessTokenRef.current);
-      } catch (error) {
-        if (!(error instanceof ApiError) || error.status !== 401) {
-          throw error;
+  const callAuthorized = useCallback(
+    async <T,>(fn: (accessToken: string) => Promise<T>): Promise<T> => {
+      if (accessTokenRef.current) {
+        try {
+          return await fn(accessTokenRef.current);
+        } catch (error) {
+          if (!(error instanceof ApiError) || error.status !== 401) {
+            throw error;
+          }
+          // fall through to refresh-and-retry below
         }
-        // fall through to refresh-and-retry below
       }
-    }
 
-    const session = await refresh();
-    return requestWithToken(session.accessToken);
-  }, [refresh]);
+      const session = await refresh();
+      return fn(session.accessToken);
+    },
+    [refresh],
+  );
+
+  const fetchCurrentUser = useCallback(
+    () => callAuthorized((token) => getCurrentUser(token)),
+    [callAuthorized],
+  );
 
   return (
     <AuthContext.Provider
-      value={{ status, user, login, register, logout, fetchCurrentUser }}
+      value={{ status, user, login, register, logout, fetchCurrentUser, callAuthorized }}
     >
       {children}
     </AuthContext.Provider>

@@ -2,7 +2,7 @@
 
 > 本文件是本项目的唯一真相来源(single source of truth)。每次开新的 Claude Code session,先读这份文件。
 > 更新时间:2026-08(随项目迭代持续更新)
-> 当前进度:Phase 0~5 已完成,Phase 6(支付模块)未开始 —— 详见第 3 节。
+> 当前进度:Phase 0~5 已完成(含 Phase 5 前端选座页),Phase 6(支付模块)未开始 —— 详见第 3 节。
 
 ---
 
@@ -221,6 +221,53 @@
 有 booking 记录的场次不允许删除,返回干净的 409。这次没有再犯 V7 那次"随手写
 CASCADE"的错误。
 
+### Phase 5 前端补充:选座页 `/showtimes/{id}/seats`(前端已完成,2026-08-02)
+替换掉了原来的"Phase 5 开发中"占位页,`GET .../seats` 公开轮询 +
+`POST/DELETE /bookings` 走完整交互流程。关键实现决定:
+
+- **轮询间隔固定 4 秒**,且只在座位图真正显示时轮询——一旦提交成功进入
+  "请在 5 分钟内支付" 倒计时页,或者倒计时到期进入"已过期"页,轮询立刻停止
+  (没必要在这两个屏幕上还请求座位状态);返回选座页时才恢复轮询,同时立刻
+  触发一次手动刷新。
+- **座位视觉状态的区分逻辑**(`components/booking/seat-map.tsx`):四种状态
+  用"边框样式 + 图标"双重编码,不是只靠颜色区分(色弱也能分辨)——
+  可选:玻璃卡片描边;已选:主题金色描边 + 浅色填充;LOCKED(别人正在选,
+  暂时锁定):虚线边框 + 灰色半透明 + 一个小锁图标(替换掉座位号数字);
+  BOOKED(已成交):实心灰色填充、无边框 + 一个勾选图标。特意没有直接复用
+  `GlassCard`(它给每张卡片都挂了 pointermove 监听 + framer-motion 光标跟随
+  高光,一个影厅动辄上百个座位按钮,每个都挂一份等于上百个 pointermove
+  监听器,会拖慢交互),而是用了同一套 `--glass-*` CSS token 做视觉语言复用,
+  只在按钮上留了一个轻量的 `whileTap` 缩放反馈。情侣座额外叠加一个心形图标
+  常驻显示(不受状态影响),和"占 2 格宽"一起提示这是情侣座。
+- **座位选择冲突(409)处理:不解析错误信息里的座位 UUID,而是重新拉取一次
+  座位状态并跟当前选择做 diff**——`SeatUnavailableException` 的 message 只在
+  Redis 加锁失败时精确到 1 个座位 id,但在数据库预检查阶段命中时可能一次列出
+  多个;与其依赖这个字符串格式(以后后端改了措辞前端就得跟着改),不如让前端
+  自己重新请求一次权威数据源、对比"我选中的座位里哪些现在不是 AVAILABLE
+  了",这样无论后端这次报了 1 个还是全部冲突座位,前端都能完整地摘掉它们并
+  提示具体是哪几个。
+- **倒计时到期后不主动调用 `DELETE /bookings/{id}`,而是完全依赖后端的懒惰
+  过期**:如果客户端在计时到 0 时抢着调用 DELETE,可能会跟后端自己的懒惰过期
+  判定竞态——如果后端先把这条 PENDING 标记成了 EXPIRED,DELETE 会因为
+  "booking 状态已不是 PENDING" 返回 409。倒计时到 0 只是把本地 UI 切到"已
+  过期"提示屏,真正让座位状态变回 AVAILABLE 的是用户点"返回重新选座"时那次
+  `GET .../seats` 请求本身(它会顺带懒惰过期这条 booking)。用户主动点"取消
+  选座"(倒计时还没到)则正常调用 DELETE。
+- **未登录用户点"确认选座"**:不会直接调用 API 拿 401,而是先在前端用
+  `useAuth().status` 判断,提示"请先登录后再确认选座"并在约 900ms 后跳转到
+  `/login?from=/showtimes/{id}/seats`。采用了简化版方案——登录成功后回到选座
+  页,但不记忆之前选的座位,需要用户重新点一次(工作量对比"登录后自动带着
+  座位选择重新提交"要小很多,而且重新点选的心智负担很低,MVP 阶段没必要为
+  这个做状态持久化)。为此把 `LoginForm` 原来写死的 `router.push("/profile")`
+  改成了可传入的 `redirectTo`,`/login` 页面读取 `?from=` 查询参数并做了
+  same-origin 校验(只接受 `/` 开头且不是 `//` 开头的路径,防 open redirect)。
+- **接口契约核对结果:没有发现不一致**。用一个测试账号跑通了完整链路
+  (`GET .../seats` → `POST /bookings` → 轮询看到 `LOCKED` → `DELETE
+  /bookings/{id}` → 轮询看到座位回到 `AVAILABLE`,以及两个账号抢同一个座位
+  触发 409),`ShowtimeSeatsResponse`/`BookingResponse` 的字段名、类型、
+  `SeatStatus`/`BookingStatus` 枚举取值都和前端 TS 类型完全对得上,没有需要
+  额外转换或兜底的地方。
+
 ### Phase 6 — 支付模块(Payment)
 - Stripe 测试模式(国际通用,面试官认得)+ 可选本地 FPX(如果想强调本地化)
 - **Webhook 幂等性处理**:同一支付回调可能重复到达,必须用订单号做幂等校验,这是很多人漏掉的点
@@ -312,6 +359,16 @@ GET    /api/v1/users/me     (需要认证)
   (`SERVER_PORT=8081 mvn spring-boot:run`),前端 `frontend/.env.local` 里的
   `NEXT_PUBLIC_API_BASE_URL` 相应指向 `http://localhost:8081`。这个 `.env.local`
   不进 git,换一台没有这个冲突的机器直接用 `.env.example` 里的 8080 默认值即可。
+- **本机 shell 里裸跑 `mvn spring-boot:run` 可能不会用 JDK 25**:本机装了不止
+  一个 JDK,新开的 shell 里 `mvn` 解析到的 `java` 不一定是 Eclipse Temurin 25——
+  症状是启动时报 `UnsupportedClassVersionError`(class file version 69,当前
+  JRE 只认到 61,也就是 Java 17)。跑之前先 `export JAVA_HOME="C:\Program
+  Files\Eclipse Adoptium\jdk-25.0.4.7-hotspot"` 再 `export
+  PATH="$JAVA_HOME/bin:$PATH"`。另外,如果本地已经有一个跑了很久的后端进程,
+  它是用启动那一刻的代码跑的——中途拉了新 migration(比如 Phase 5 的
+  `V9__bookings.sql`)不会自动生效,`flyway_schema_history` 表停在旧版本,
+  `GET .../seats` 这类新接口会直接 500;重启一次后端进程让 Flyway 重新跑一遍
+  就好。
 
 ---
 
