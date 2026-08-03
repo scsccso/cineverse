@@ -18,10 +18,13 @@ async function findShowtime(id: string): Promise<ShowtimeResponse | null> {
 
 export default async function SeatSelectionPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ bookingId?: string }>;
 }) {
   const { id } = await params;
+  const { bookingId } = await searchParams;
 
   const showtime = await findShowtime(id);
   if (!showtime) {
@@ -42,6 +45,7 @@ export default async function SeatSelectionPage({
         showTime={formatShowTime(showtime.startTime)}
         pricePerSeat={showtime.price}
         initialSeatData={seatData}
+        initialBookingId={bookingId}
       />
     </div>
   );

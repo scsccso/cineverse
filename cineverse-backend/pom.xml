@@ -25,6 +25,7 @@
         <springdoc.version>3.0.3</springdoc.version>
         <jjwt.version>0.13.0</jjwt.version>
         <archunit.version>1.4.2</archunit.version>
+        <stripe.version>29.2.0</stripe.version>
     </properties>
 
     <dependencies>
@@ -71,6 +72,13 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- Payments (Phase 6) -->
+        <dependency>
+            <groupId>com.stripe</groupId>
+            <artifactId>stripe-java</artifactId>
+            <version>${stripe.version}</version>
         </dependency>
 
         <!-- Validation -->

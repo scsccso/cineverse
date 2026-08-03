@@ -52,6 +52,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/uploads/**", "/images/**").permitAll()
+                        // Stripe's servers call this directly — no bearer
+                        // token to check; the Stripe-Signature header
+                        // (verified in PaymentService) is the only gate.
+                        .requestMatchers("/api/v1/webhooks/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/movies/**", "/api/v1/genres/**",
                                 "/api/v1/cinemas/**", "/api/v1/halls/**", "/api/v1/showtimes/**").permitAll()
                         .requestMatchers("/api/v1/movies/**").hasRole("ADMIN")

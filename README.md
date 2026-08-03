@@ -2,7 +2,7 @@
 
 CineVerse 是一个作品集(Portfolio)项目:一个电影院订票系统的全栈实现(Spring Boot 后端 + Next.js 前端),用来展示架构设计、并发处理、安全性(JWT认证)、测试(Testcontainers 集成测试)与 CI/CD 等工程能力。
 
-**当前状态:Phase 0~5 已完成。** User Management(注册/登录/刷新/登出)、Movie Management(电影 CRUD + 海报上传)、Cinema & Hall Management(分店/影厅/座位自动布局)、Showtime Scheduling(场次排期)、Seat Booking(选座锁座 + 订单)。
+**当前状态:Phase 0~6 已完成。** User Management(注册/登录/刷新/登出)、Movie Management(电影 CRUD + 海报上传)、Cinema & Hall Management(分店/影厅/座位自动布局)、Showtime Scheduling(场次排期)、Seat Booking(选座锁座 + 订单)、Payment(Stripe Checkout + webhook 幂等确认)。
 
 ## 技术栈
 
@@ -12,6 +12,7 @@ CineVerse 是一个作品集(Portfolio)项目:一个电影院订票系统的全�
 - Redis 7(座位锁,Phase 5 接入;refresh token 撤销走的是数据库 `revoked` 字段,不经过 Redis)
 - Spring Data JPA + Hibernate + MapStruct
 - JWT(jjwt),BCrypt 密码加密
+- Stripe Checkout(测试模式,Phase 6 支付;webhook 签名验证 + 幂等确认)
 - springdoc-openapi(Swagger UI)
 - JUnit 5 + Mockito + Testcontainers(真实 Postgres 集成测试)
 - Maven
@@ -30,14 +31,14 @@ CineVerse/
 ├── CLAUDE.md                 # 项目记忆:架构、路线图、当前冲刺范围(面向 Claude Code)
 ├── docs/DEVELOPMENT.md       # 开发者参考:API curl 示例、环境配置、手动验证步骤
 ├── docker-compose.yml        # 本地依赖:Postgres 16 + Redis 7
-├── .env.example               # docker-compose 使用的环境变量样例
+├── .env.example               # docker-compose 变量 + 后端进程直接读取的 Stripe key(Phase 6)
 ├── cineverse-backend/        # Spring Boot 后端(Maven 项目)
 │   └── src/main/resources/db/migration/  # Flyway 迁移脚本
 └── frontend/                 # Next.js 前端
     ├── .env.example           # NEXT_PUBLIC_API_BASE_URL 样例
     └── src/
-        ├── app/               # 路由:/, /login, /register, /profile, /showtimes/[id](/seats)
-        ├── components/        # ui(shadcn) / auth / layout / motion / booking(选座)
+        ├── app/               # 路由:/, /login, /register, /profile, /showtimes/[id](/seats), /bookings/[id]/confirmed
+        ├── components/        # ui(shadcn) / auth / layout / motion / booking(选座 + 支付确认)
         ├── lib/                # api 客户端、auth context、zod schema
         └── proxy.ts           # 路由保护(Next 16:middleware 改名 proxy)
 ```

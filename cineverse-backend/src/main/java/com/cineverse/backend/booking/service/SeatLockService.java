@@ -38,6 +38,18 @@ public class SeatLockService {
         redisTemplate.delete(key(showtimeId, seatId));
     }
 
+    /**
+     * Refreshes an already-held lock's TTL — a plain {@code EXPIRE}, not
+     * another {@code SETNX}. Safe without re-checking the holder because the
+     * only caller (PaymentService, when checkout begins) has already
+     * verified the booking is still PENDING and owned by the caller, which
+     * is only possible if this lock is the one that booking's own
+     * BookingService.create() acquired in the first place.
+     */
+    public void extend(UUID showtimeId, UUID seatId, Duration ttl) {
+        redisTemplate.expire(key(showtimeId, seatId), ttl);
+    }
+
     private String key(UUID showtimeId, UUID seatId) {
         return "seat-lock:%s:%s".formatted(showtimeId, seatId);
     }

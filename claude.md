@@ -2,7 +2,7 @@
 
 > 本文件是本项目的唯一真相来源(single source of truth)。每次开新的 Claude Code session,先读这份文件。
 > 更新时间:2026-08(随项目迭代持续更新)
-> 当前进度:Phase 0~5 已完成(含 Phase 5 前端选座页),Phase 6(支付模块)未开始 —— 详见第 3 节。
+> 当前进度:Phase 0~6 已完成(含 Phase 6 Stripe Checkout 支付),Phase 7(订单/电子票)未开始 —— 详见第 3 节。
 > 详细的API调试步骤见 docs/DEVELOPMENT.md,面向招聘官的项目介绍见 README.md,本文件是面向Claude Code的项目记忆。
 
 ---
@@ -338,9 +338,99 @@ CASCADE"的错误。
   `SeatStatus`/`BookingStatus` 枚举取值都和前端 TS 类型完全对得上,没有需要
   额外转换或兜底的地方。
 
-### Phase 6 — 支付模块(Payment)
-- Stripe 测试模式(国际通用,面试官认得)+ 可选本地 FPX(如果想强调本地化)
-- **Webhook 幂等性处理**:同一支付回调可能重复到达,必须用订单号做幂等校验,这是很多人漏掉的点
+### Phase 6 — 支付模块(Payment)✅ 完成于 2026-08-03
+- Stripe **Checkout**(不是 Payment Intents + 自建表单):新增 `payments` 表
+  (V10)、`POST /api/v1/bookings/{id}/checkout`(需登录,仅 booking 本人)、
+  `POST /api/v1/webhooks/stripe`(公开,校验签名)。`bookings.status` 的
+  `CONFIRMED` 终于第一次被真正设置——由 webhook 处理成功后触发,不是靠
+  前端乐观更新。
+
+关键决定:
+- **Checkout 而不是 Payment Intents**:这是一个作品集项目,不需要自定义支付
+  表单 UI 带来的加分(那更多是为了产品体验/品牌一致性),Stripe 托管页面
+  免费省掉整个"自己实现符合 PCI 要求的支付表单"的工作量,把有限的时间留给
+  幂等性这个真正体现工程能力的难点。
+- **Stripe 测试模式 key 不能自己凭空构造**:和测试卡号(`4242 4242 4242
+  4242`)不同,test key 是跟具体 Stripe 账号绑定生成的,没有官方公开的
+  可复用示例值。因此测试策略上选择了 mock 掉 `StripeCheckoutGateway`(见
+  下面的接口拆分),自动化测试全程不需要真实 Stripe 账号,真实 key 只走
+  `.env` 配置,留给本地手动用 Stripe CLI 联调。
+- **`StripeCheckoutGateway` 只包了一个方法**(`createSession`)——真正需要
+  联网、需要真实 Stripe 账号的只有"创建 Checkout Session"这一步;Webhook
+  签名验证(`Webhook.constructEvent`)是纯本地 HMAC 计算,不联网、不需要
+  真实账号,所以**没有**包进这个接口,而是直接在 `PaymentService` 里调用
+  真正的 Stripe SDK。这样测试时只 mock 网络调用那一小块
+  (`PaymentFlowIntegrationTest` 用 `@MockitoBean` 替换
+  `StripeCheckoutGateway`),签名验证和幂等性用的是真实 SDK 代码路径 +
+  自己按 Stripe 公开文档的算法(`t=<timestamp>,v1=hex(HMAC-SHA256(secret,
+  "<timestamp>.<payload>"))`)签出的测试 payload,而不是一个绕过真实校验
+  逻辑的假实现——覆盖的是这个模块真正的难点,不是在自我复述"if 签名对就
+  放行"这行代码本身。
+- **幂等键选的是 `payments.stripe_session_id`(唯一约束),不是单独维护一张
+  processed-event-id 表**:`checkout.session.completed` 这个事件类型在一个
+  session 的生命周期里只有意义地触发一次(重复投递 = 同一个 session id 的
+  同一个事件),所以"这个 session id 是否已经处理过"这一个判断就足够构成
+  幂等性,不需要额外一层"事件 id 是否见过"的记录表。真正防止竞态的是
+  `PaymentRepository.findByStripeSessionIdForUpdate`——`SELECT ... FOR
+  UPDATE` 的行锁,不是"先查再判断"的两步操作:两个几乎同时到达的 webhook
+  投递,第二个会等第一个事务提交后才读到"已经是 SUCCEEDED",直接 no-op,
+  不会重复创建/更新任何记录。`PaymentFlowIntegrationTest` 里对同一个签名
+  正确的 payload 连续 POST 两次,断言 `payments` 表始终只有一行、booking
+  只被确认一次。
+- **Stripe Checkout Session 的 `expires_at` 硬性下限是创建后 30
+  分钟**(Stripe API 的强制约束,查证于官方文档,不是猜测),远长于 Phase 5
+  的 5 分钟选座持有窗口——如果不处理这个落差,几乎每一次真实支付(用户在
+  Stripe 托管页面填卡号、走 3D Secure 等)都会在座位持有到期之后才完成,
+  届时座位可能已经被 Redis TTL 释放、甚至被别人重新锁定。解法:
+  `POST /bookings/{id}/checkout` 成功创建 Stripe session 的同时,把这个
+  booking 的持有窗口从 5 分钟**延长到 35 分钟**(`Booking.extendHold` +
+  `SeatLockService.extend` 同时延长 DB 记录和 Redis 座位锁的 TTL,两者用
+  同一个时长,不会互相拖后腿),Stripe 这边的 `expires_at` 设成 30
+  分钟——**内部持有窗口比 Stripe 自己的 session 窗口多留 5 分钟缓冲**,
+  确保"Stripe 那边支付刚好在最后一秒完成"这种情况仍然落在我们自己的持有
+  窗口内。选座阶段的 5 分钟倒计时文案和逻辑本身不变(那描述的是"决定要不要
+  付款"这个阶段,依然准确)——只有真正点击"去支付"、进入 Stripe 托管页面
+  之后才延长。
+- **两层防御防止"迟到的成功支付"污染 booking 状态**:`BookingService
+  .confirmIfPending` 只在 booking 当前确实是 `PENDING` 时才转
+  `CONFIRMED`,如果已经是 `EXPIRED`/`CANCELLED`(持有窗口在支付完成前就
+  过了,理论上因为上面 35/30 分钟的缓冲设计已经很难触发,但不是不可能——
+  比如用户开着两个标签页分别发起了两次 checkout)或者已经被另一次支付
+  confirm 过,webhook 处理会照常把这次的 `Payment` 行标记
+  `SUCCEEDED`(钱确实收到了,记账要准确)但**不会**把 booking 状态改回
+  `CONFIRMED`——防止"复活"一个座位可能已经易主的订单。这种"钱收到了但
+  订单没法安全确认"的边界场景(意味着可能产生了重复收费)目前只做到"不
+  破坏数据一致性",不做自动退款——那需要额外的客服/对账流程,是有意收窄
+  的 MVP 边界,不是遗漏。
+- **`checkout.session.expired` 只标记 `Payment.status = FAILED`,不碰
+  booking**:booking 状态交给 Phase 5 已有的懒惰过期机制处理(见 Phase 5 的
+  "懒惰过期"决定),这里重复写一遍反而会有两套判断逻辑互相打架的风险。
+- **用户在 Stripe 页面点返回/关标签页放弃支付**:Stripe 不会给我们发任何
+  通知,booking 保持 `PENDING` 直到懒惰过期机制在下一次读取时自然清理——
+  这是有意为之,不是遗漏(题目本身也是这么问的,这里正式记录下来)。
+- **前端"取消支付返回选座页"需要一个额外机制才能真正可用**:cancel_url
+  设成 `/showtimes/{showtimeId}/seats?bookingId={id}`,但光加这个 query
+  参数不够——`SeatPicker` 原本的 `booking` state 只在"当前这次组件生命周期
+  里刚创建成功的订单"时才有值,用户从 Stripe 页面返回时是全新的页面加载,
+  这个 state 是空的,如果不处理,用户会看到自己选的座位显示成"被锁定"
+  (灰色虚线+锁图标,和别人锁定的座位视觉上无法区分)却点不动,一直卡到
+  35 分钟持有窗口过期。加了一个 resume 机制:`SeatPicker` 收到
+  `initialBookingId` 时用 `callAuthorized` 拉一次 `GET /bookings/{id}`,
+  如果还是 `PENDING` 就直接展示支付确认页(可以重新点"去支付"),不是
+  `PENDING` 就当作普通座位图处理;处理完用 `router.replace` 把 query 参数
+  从 URL 里去掉,避免刷新页面重复触发。
+- **支付成功页 `/bookings/{id}/confirmed` 用轮询确认状态,不直接信任
+  redirect 本身**:Stripe 的 `success_url` 跳转和 webhook 到达是两个独立的
+  异步事件,谁先到不保证——落地页可能在 booking 真正变成 `CONFIRMED` 之前
+  就先渲染出来了。沿用 Phase 5"轮询、不上 WebSocket"的思路,每 1.5 秒轮询
+  一次 `GET /bookings/{id}`,最多 10 次(~15 秒),期间显示"正在确认支付
+  结果";超时后不会一直转圈卡住,而是给一个"支付结果确认中,请稍后刷新"的
+  兜底提示,不假装成功也不假装失败。
+- **金额单位**:Stripe API 要求最小货币单位(分/仙,不是"元"),`payments`
+  表和 `bookings.total_price` 一样存的是十进制的"元"(`NUMERIC(10,2)`,
+  MYR);只有 `StripeCheckoutGatewayImpl` 调用 Stripe SDK 那一层做
+  `amount * 100` 的换算,不让这个 Stripe API 特有的细节渗透到领域模型/
+  数据库里。
 
 ### Phase 7 — 订单/电子票(Order & E-ticket)
 - 订单记录、QR code 生成、入场核销 API(扫码校验 + 防止重复入场)

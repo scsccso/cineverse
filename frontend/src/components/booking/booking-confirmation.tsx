@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GlassCard } from "@/components/glass/glass-card";
 import { Button } from "@/components/ui/button";
+import { AnimatedFormBanner } from "@/components/motion/animated-form-banner";
 import type { BookingResponse } from "@/lib/api/types";
 
 interface BookingConfirmationProps {
@@ -11,6 +12,9 @@ interface BookingConfirmationProps {
   onExpire: () => void;
   onCancel: () => void;
   isCancelling: boolean;
+  onCheckout: () => void;
+  isCheckingOut: boolean;
+  checkoutError: string | null;
 }
 
 /**
@@ -29,6 +33,9 @@ export function BookingConfirmation({
   onExpire,
   onCancel,
   isCancelling,
+  onCheckout,
+  isCheckingOut,
+  checkoutError,
 }: BookingConfirmationProps) {
   const expiresAtMs = useMemo(() => new Date(booking.expiresAt).getTime(), [booking.expiresAt]);
   const [initialRemainingMs] = useState(() => Math.max(1, expiresAtMs - Date.now()));
@@ -90,13 +97,21 @@ export function BookingConfirmation({
         </div>
       </dl>
 
-      <Button disabled className="mt-6 h-11 w-full" title="支付功能开发中(Phase 6)">
-        去支付(开发中)
+      <div className="mt-4">
+        <AnimatedFormBanner message={checkoutError} variant="destructive" />
+      </div>
+
+      <Button
+        className="mt-6 h-11 w-full"
+        disabled={isCheckingOut || isCancelling}
+        onClick={onCheckout}
+      >
+        {isCheckingOut ? "正在跳转到支付页面…" : "去支付"}
       </Button>
       <Button
         variant="outline"
         className="mt-3 h-11 w-full"
-        disabled={isCancelling}
+        disabled={isCancelling || isCheckingOut}
         onClick={onCancel}
       >
         {isCancelling ? "取消中…" : "取消选座"}

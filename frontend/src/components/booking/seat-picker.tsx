@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
 import { ApiError } from "@/lib/api/client";
 import { getShowtimeSeats } from "@/lib/api/showtimes";
-import { cancelBooking, createBooking } from "@/lib/api/bookings";
+import { cancelBooking, createBooking, createCheckoutSession, getBooking } from "@/lib/api/bookings";
 import type { BookingResponse, SeatStatusEntry, ShowtimeSeatsResponse } from "@/lib/api/types";
 import { SeatMap } from "@/components/booking/seat-map";
 import { BookingConfirmation } from "@/components/booking/booking-confirmation";
@@ -25,6 +25,8 @@ interface SeatPickerProps {
   showTime: string;
   pricePerSeat: number;
   initialSeatData: ShowtimeSeatsResponse;
+  /** Present when redirected back here from Stripe's cancel_url — see the resume effect below. */
+  initialBookingId?: string;
 }
 
 export function SeatPicker({
@@ -35,6 +37,7 @@ export function SeatPicker({
   showTime,
   pricePerSeat,
   initialSeatData,
+  initialBookingId,
 }: SeatPickerProps) {
   const { status, callAuthorized } = useAuth();
   const router = useRouter();
@@ -47,6 +50,37 @@ export function SeatPicker({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  // Stripe's cancel_url sends the user back here with ?bookingId=... — the
+  // booking itself is still PENDING (Stripe doesn't notify us on cancel; it
+  // just relies on Phase 5's lazy expiry, see CLAUDE.md Phase 6). Without
+  // this, the user would land on an ordinary seat grid with their own seats
+  // showing as LOCKED and no way back to the pay screen for this booking
+  // until it expires. router.replace strips the query param afterward so a
+  // manual refresh of this page doesn't re-trigger the resume attempt.
+  useEffect(() => {
+    if (!initialBookingId || status !== "authenticated") return;
+    let cancelled = false;
+    callAuthorized((token) => getBooking(token, initialBookingId))
+      .then((result) => {
+        if (!cancelled && result.status === "PENDING") {
+          setBooking(result);
+        }
+      })
+      .catch(() => {
+        // Not ours, gone, or already resolved — fall back to the seat grid.
+      })
+      .finally(() => {
+        if (!cancelled) {
+          router.replace(`/showtimes/${showtimeId}/seats`);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialBookingId, status, callAuthorized, router, showtimeId]);
 
   const seatById = useMemo(() => {
     const map = new Map<string, SeatStatusEntry>();
@@ -192,6 +226,22 @@ export function SeatPicker({
     refreshSeats().catch(() => {});
   }
 
+  async function handleCheckout() {
+    if (!booking) return;
+    setIsCheckingOut(true);
+    setCheckoutError(null);
+    try {
+      const session = await callAuthorized((token) => createCheckoutSession(token, booking.id));
+      // Plain full-page redirect to Stripe's hosted URL — no Stripe.js
+      // needed since the session was created server-side (see
+      // BookingController.checkout / PaymentService).
+      window.location.href = session.checkoutUrl;
+    } catch {
+      setCheckoutError("发起支付失败,请稍后重试");
+      setIsCheckingOut(false);
+    }
+  }
+
   if (booking) {
     return (
       <BookingConfirmation
@@ -200,6 +250,9 @@ export function SeatPicker({
         onExpire={handleExpire}
         onCancel={handleCancel}
         isCancelling={isCancelling}
+        onCheckout={handleCheckout}
+        isCheckingOut={isCheckingOut}
+        checkoutError={checkoutError}
       />
     );
   }

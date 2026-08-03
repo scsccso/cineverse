@@ -1,0 +1,63 @@
+package com.cineverse.backend.payment.gateway;
+
+import com.cineverse.backend.payment.config.StripeProperties;
+import com.cineverse.backend.payment.exception.StripeGatewayException;
+import com.stripe.exception.StripeException;
+import com.stripe.model.checkout.Session;
+import com.stripe.net.RequestOptions;
+import com.stripe.param.checkout.SessionCreateParams;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import org.springframework.stereotype.Component;
+
+/**
+ * Real Stripe API implementation. The secret key is passed per-call via
+ * RequestOptions rather than the SDK's global static {@code Stripe.apiKey}
+ * field — avoids mutating shared static state from a Spring bean.
+ */
+@Component
+public class StripeCheckoutGatewayImpl implements StripeCheckoutGateway {
+
+    private final StripeProperties properties;
+
+    public StripeCheckoutGatewayImpl(StripeProperties properties) {
+        this.properties = properties;
+    }
+
+    @Override
+    public CreatedCheckoutSession createSession(CheckoutSessionSpec spec) {
+        SessionCreateParams params = SessionCreateParams.builder()
+                .setMode(SessionCreateParams.Mode.PAYMENT)
+                .setSuccessUrl(spec.successUrl())
+                .setCancelUrl(spec.cancelUrl())
+                .setClientReferenceId(spec.bookingId().toString())
+                .putMetadata("bookingId", spec.bookingId().toString())
+                .setExpiresAt(spec.expiresAt().getEpochSecond())
+                .addLineItem(SessionCreateParams.LineItem.builder()
+                        .setQuantity(1L)
+                        .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
+                                .setCurrency(spec.currency())
+                                .setUnitAmount(toMinorUnits(spec.amount()))
+                                .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                                        .setName(spec.productName())
+                                        .build())
+                                .build())
+                        .build())
+                .build();
+
+        RequestOptions requestOptions =
+                RequestOptions.builder().setApiKey(properties.secretKey()).build();
+
+        try {
+            Session session = Session.create(params, requestOptions);
+            return new CreatedCheckoutSession(session.getId(), session.getUrl());
+        } catch (StripeException e) {
+            throw new StripeGatewayException("Failed to create Stripe Checkout Session", e);
+        }
+    }
+
+    /** Stripe amounts are in the smallest currency unit (e.g. sen for MYR) — always 2 decimal places for the currencies this app uses. */
+    private long toMinorUnits(BigDecimal amount) {
+        return amount.movePointRight(2).setScale(0, RoundingMode.HALF_UP).longValueExact();
+    }
+}

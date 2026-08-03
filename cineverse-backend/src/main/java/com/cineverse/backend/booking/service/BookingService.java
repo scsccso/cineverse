@@ -185,6 +185,49 @@ public class BookingService {
         return bookingMapper.toResponse(booking, bookingSeats);
     }
 
+    /**
+     * Phase 6 checkout entry point: same lazy-expiry rule as every other
+     * read path, plus a strict owner check (no admin bypass — paying is
+     * inherently a per-user action, unlike view/cancel) and a PENDING-only
+     * gate, matching the CLAUDE.md Phase 6 requirement verbatim ("校验这个
+     * booking属于当前登录用户、状态是PENDING且未过期").
+     */
+    @Transactional
+    public Booking loadPendingBookingForCheckout(UUID userId, UUID bookingId) {
+        Booking booking = loadWithLazyExpiry(bookingId);
+        if (!booking.getUser().getId().equals(userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not have access to this booking");
+        }
+        if (booking.getStatus() != BookingStatus.PENDING) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "Booking is " + booking.getStatus() + ", cannot start checkout");
+        }
+        return booking;
+    }
+
+    /**
+     * Called only from PaymentService after a successful Stripe payment.
+     * Deliberately a no-op (returns false, booking untouched) if the
+     * booking isn't currently PENDING: it may have already been confirmed
+     * by a different Checkout Session for the same booking, or its hold may
+     * have lapsed before the webhook arrived. Resurrecting an
+     * EXPIRED/CANCELLED booking to CONFIRMED just because Stripe reports
+     * money moved would risk confirming a seat someone else may already
+     * hold — see CLAUDE.md Phase 6 for why this residual edge case (a
+     * captured payment that can't be safely applied) is a manual
+     * reconciliation matter, not something auto-refunded here.
+     */
+    @Transactional
+    public boolean confirmIfPending(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId).orElse(null);
+        if (booking == null || booking.getStatus() != BookingStatus.PENDING) {
+            return false;
+        }
+        booking.markConfirmed();
+        bookingRepository.saveAndFlush(booking);
+        return true;
+    }
+
     private void requireAccess(UUID userId, boolean isAdmin, Booking booking) {
         if (!isAdmin && !booking.getUser().getId().equals(userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not have access to this booking");

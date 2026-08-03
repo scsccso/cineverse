@@ -288,8 +288,8 @@ curl -s http://localhost:8081/api/v1/showtimes/$SHOWTIME_ID/seats \
 状态，可多选后在底部结算栏看到已选座位和总价（移动端结算栏固定在屏幕底部，
 座位图本身可横向滚动）。点"确认选座"：未登录会提示后跳转 `/login`，登录后
 回到这个页面继续选（座位选择不会跨登录保留，需要重新点一次）；提交成功进入
-5 分钟倒计时页（下方的"去支付"按钮是禁用状态，注明 Phase 6 开发中）；倒计时
-到 0 或手动点"取消选座"都会把座位释放回选座页。
+5 分钟倒计时页，"去支付"按钮点击后调用 Stripe Checkout（见下面 Payment 一节）；
+倒计时到 0 或手动点"取消选座"都会把座位释放回选座页。
 
 ### 并发加锁怎么验证
 
@@ -315,4 +315,66 @@ booking 后把它的 `expires_at` 直接改到过去，验证下一次读取座�
 ```bash
 cd cineverse-backend
 mvn test -Dtest=BookingConcurrencyIntegrationTest
+```
+
+## Payment / 支付（Phase 6）
+
+`POST /api/v1/bookings/{id}/checkout` 需要登录（只能是 booking 本人，ADMIN 不能代发起）；
+`POST /api/v1/webhooks/stripe` 公开但校验 `Stripe-Signature`。本地要跑通完整链路需要
+Stripe 账号的**测试模式** key —— 免费注册、不需要真实营业执照/银行信息：
+
+1. 打开 `https://dashboard.stripe.com` 注册/登录，确认右上角处于 **Test mode**。
+2. Developers -> API keys 页面拿到 `sk_test_...`，填进 `.env` 的 `STRIPE_SECRET_KEY`
+   （不是 docker-compose 变量，是后端进程直接读的环境变量，见根目录 `.env.example`）。
+3. 安装 [Stripe CLI](https://stripe.com/docs/stripe-cli),登录后本地转发 webhook：
+
+```bash
+stripe login
+stripe listen --forward-to localhost:8081/api/v1/webhooks/stripe
+```
+
+`stripe listen` 启动时会打印一个 `whsec_...`,把它填进 `STRIPE_WEBHOOK_SECRET`
+(每次重新跑 `stripe listen` 这个值都会变,要跟着更新)——这是本地开发**唯一**能
+拿到有效 webhook secret 的方式,Stripe 官方文档里不存在一个能公用的示例值。
+
+### 发起一次支付
+
+```bash
+ACCESS_TOKEN="<任意已注册用户登录拿到的 accessToken>"
+
+# 复用前面 Booking 一节创建的 $BOOKING_ID(状态必须是 PENDING 且未过期)
+curl -s -X POST http://localhost:8081/api/v1/bookings/$BOOKING_ID/checkout \
+  -H "Authorization: Bearer $ACCESS_TOKEN" | jq
+```
+
+返回 `{"checkoutUrl": "https://checkout.stripe.com/..."}`——浏览器打开这个 URL
+用 Stripe 测试卡号 `4242 4242 4242 4242`（任意未来到期日、任意 CVC、任意邮编）
+即可走完整的托管支付页流程。支付成功后 Stripe 会把事件发到 `stripe listen`
+转发的地址,`cineverse-backend` 的日志里能看到 Flyway/Hibernate 之外新增的
+webhook 处理请求;此时再查一次 booking 应该已经变成 `CONFIRMED`：
+
+```bash
+curl -s http://localhost:8081/api/v1/bookings/$BOOKING_ID \
+  -H "Authorization: Bearer $ACCESS_TOKEN" | jq '.status'
+```
+
+在 Stripe 托管页面点"返回"或者直接关掉标签页(模拟用户放弃支付)：booking
+会保持 `PENDING`,不会立刻变化——这是有意为之,不是漏了处理,见 `CLAUDE.md`
+Phase 6"用户取消支付"一节。此时回到前端选座页(`cancel_url` 会自动带你回去),
+booking 只要还没到期就能重新点"去支付"再试一次。
+
+### 幂等性怎么验证
+
+`stripe trigger checkout.session.completed` 只会构造一个全新的、和真实
+booking 无关的测试 session,不会命中我们自己创建的 Payment 行(找不到对应
+`stripe_session_id` 会直接 no-op 返回 200),所以验证幂等性的正确方式不是
+这个命令,而是自动化集成测试:`PaymentFlowIntegrationTest` 里用 Stripe 官方
+文档记录的签名算法(`t=<timestamp>,v1=hex(HMAC-SHA256(secret, "<timestamp>.<payload>"))`)
+真实构造一个签名正确的 `checkout.session.completed` 事件,对同一个 webhook
+端点连续 POST 两次,断言 `payments` 表里始终只有一条记录、booking 只被
+确认一次。同一个测试类里还覆盖了签名错误必须被拒绝(`400`)的场景。本地跑：
+
+```bash
+cd cineverse-backend
+mvn test -Dtest=PaymentFlowIntegrationTest
 ```

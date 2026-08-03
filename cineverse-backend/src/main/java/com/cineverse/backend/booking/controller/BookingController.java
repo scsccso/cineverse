@@ -3,6 +3,8 @@ package com.cineverse.backend.booking.controller;
 import com.cineverse.backend.booking.dto.BookingResponse;
 import com.cineverse.backend.booking.dto.CreateBookingRequest;
 import com.cineverse.backend.booking.service.BookingService;
+import com.cineverse.backend.payment.dto.CheckoutSessionResponse;
+import com.cineverse.backend.payment.service.PaymentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -27,9 +29,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class BookingController {
 
     private final BookingService bookingService;
+    private final PaymentService paymentService;
 
-    public BookingController(BookingService bookingService) {
+    public BookingController(BookingService bookingService, PaymentService paymentService) {
         this.bookingService = bookingService;
+        this.paymentService = paymentService;
     }
 
     @PostMapping
@@ -57,6 +61,16 @@ public class BookingController {
             + "expires_at 但仍是 PENDING，会在此次请求中懒惰标记为 EXPIRED 再返回")
     public BookingResponse getById(Authentication authentication, @PathVariable UUID id) {
         return bookingService.getById(currentUserId(authentication), isAdmin(authentication), id);
+    }
+
+    @PostMapping("/{id}/checkout")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "发起 Stripe Checkout 支付", description = "只有 booking 的所有者能发起(不允许 ADMIN 代发起,"
+            + "因为付款本身是本人行为);要求 booking 当前是 PENDING 且未过期(懒惰过期检查同 GET/DELETE)。"
+            + "成功后会把这个 booking 的 5 分钟持有窗口延长到 35 分钟(配合 Stripe Checkout Session 30 分钟的"
+            + "最短过期时间限制),返回 Stripe 托管支付页面的 URL 供前端整页跳转")
+    public CheckoutSessionResponse checkout(Authentication authentication, @PathVariable UUID id) {
+        return paymentService.createCheckoutSession(currentUserId(authentication), id);
     }
 
     private UUID currentUserId(Authentication authentication) {
