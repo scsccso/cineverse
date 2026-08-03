@@ -24,7 +24,10 @@ import org.hibernate.annotations.UpdateTimestamp;
 /**
  * No generic status setter — only the transitions each phase actually
  * performs are exposed (markExpired/markCancelled from Phase 5,
- * markConfirmed/extendHold from Phase 6's payment flow).
+ * markConfirmed from Phase 6's payment flow). expires_at itself is never
+ * extended for Stripe's sake — see CLAUDE.md Phase 6 for why the 5-minute
+ * hold is left untouched and Stripe's own Checkout Session is proactively
+ * expired instead when this booking is released.
  */
 @Entity
 @Table(name = "bookings")
@@ -80,18 +83,5 @@ public class Booking {
 
     public void markConfirmed() {
         this.status = BookingStatus.CONFIRMED;
-    }
-
-    /**
-     * Called once, when checkout begins (PaymentService.createCheckoutSession)
-     * — Stripe Checkout Sessions can't expire in under 30 minutes (a hard
-     * API floor), far longer than Phase 5's 5-minute seat hold, so the hold
-     * is extended in lockstep with the Redis seat locks
-     * (SeatLockService.extend) the moment the user actually starts paying,
-     * rather than changing the 5-minute default for the seat-selection step
-     * itself.
-     */
-    public void extendHold(Instant newExpiresAt) {
-        this.expiresAt = newExpiresAt;
     }
 }

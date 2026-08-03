@@ -56,6 +56,18 @@ public class StripeCheckoutGatewayImpl implements StripeCheckoutGateway {
         }
     }
 
+    @Override
+    public void expireSession(String stripeSessionId) {
+        RequestOptions requestOptions =
+                RequestOptions.builder().setApiKey(properties.secretKey()).build();
+        try {
+            Session session = Session.retrieve(stripeSessionId, requestOptions);
+            session.expire(requestOptions);
+        } catch (StripeException e) {
+            throw new StripeGatewayException("Failed to expire Stripe Checkout Session " + stripeSessionId, e);
+        }
+    }
+
     /** Stripe amounts are in the smallest currency unit (e.g. sen for MYR) — always 2 decimal places for the currencies this app uses. */
     private long toMinorUnits(BigDecimal amount) {
         return amount.movePointRight(2).setScale(0, RoundingMode.HALF_UP).longValueExact();

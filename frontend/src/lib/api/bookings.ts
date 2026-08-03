@@ -26,7 +26,7 @@ export function getBooking(accessToken: string, id: string): Promise<BookingResp
   });
 }
 
-/** Extends the booking's hold to 35 minutes server-side and returns the Stripe-hosted checkout page URL — redirect the whole page there (no Stripe.js needed). */
+/** Creates a Stripe Checkout Session and returns its hosted page URL — redirect the whole page there (no Stripe.js needed). Does not touch the booking's 5-minute hold (see CLAUDE.md Phase 6). */
 export function createCheckoutSession(
   accessToken: string,
   bookingId: string,

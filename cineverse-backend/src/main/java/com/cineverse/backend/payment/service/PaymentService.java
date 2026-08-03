@@ -1,16 +1,15 @@
 package com.cineverse.backend.payment.service;
 
 import com.cineverse.backend.booking.entity.Booking;
-import com.cineverse.backend.booking.repository.BookingRepository;
-import com.cineverse.backend.booking.repository.BookingSeatRepository;
+import com.cineverse.backend.booking.event.BookingReleasedEvent;
 import com.cineverse.backend.booking.service.BookingService;
-import com.cineverse.backend.booking.service.SeatLockService;
 import com.cineverse.backend.config.FrontendProperties;
 import com.cineverse.backend.payment.config.StripeProperties;
 import com.cineverse.backend.payment.dto.CheckoutSessionResponse;
 import com.cineverse.backend.payment.entity.Payment;
 import com.cineverse.backend.payment.entity.PaymentStatus;
 import com.cineverse.backend.payment.exception.InvalidStripeSignatureException;
+import com.cineverse.backend.payment.exception.StripeGatewayException;
 import com.cineverse.backend.payment.gateway.CheckoutSessionSpec;
 import com.cineverse.backend.payment.gateway.CreatedCheckoutSession;
 import com.cineverse.backend.payment.gateway.StripeCheckoutGateway;
@@ -24,48 +23,43 @@ import com.stripe.model.checkout.Session;
 import com.stripe.net.Webhook;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
+@Slf4j
 @Service
 public class PaymentService {
 
-    /** Stripe's own hard floor — a Checkout Session cannot be made to expire in under 30 minutes. */
+    /**
+     * Stripe's own hard floor — a Checkout Session cannot be made to expire
+     * in under 30 minutes. Phase 5's 5-minute seat hold is deliberately left
+     * unchanged rather than stretched to match this (see CLAUDE.md Phase 6
+     * for the full trade-off write-up): the mismatch is instead closed by
+     * proactively expiring the Stripe session the moment the booking behind
+     * it is released — see onBookingReleased.
+     */
     static final Duration STRIPE_SESSION_DURATION = Duration.ofMinutes(30);
 
-    /**
-     * A few minutes longer than the Stripe session itself, so a payment
-     * completed at the very last second of Stripe's window is never
-     * rejected as already-expired on our side. This — not Phase 5's
-     * 5-minute seat-selection hold — is what the booking's expires_at is
-     * extended to the moment checkout begins; see Booking.extendHold.
-     */
-    static final Duration CHECKOUT_HOLD_DURATION = Duration.ofMinutes(35);
-
     private final BookingService bookingService;
-    private final BookingRepository bookingRepository;
-    private final BookingSeatRepository bookingSeatRepository;
     private final PaymentRepository paymentRepository;
-    private final SeatLockService seatLockService;
     private final StripeCheckoutGateway stripeCheckoutGateway;
     private final StripeProperties stripeProperties;
     private final FrontendProperties frontendProperties;
 
     public PaymentService(
             BookingService bookingService,
-            BookingRepository bookingRepository,
-            BookingSeatRepository bookingSeatRepository,
             PaymentRepository paymentRepository,
-            SeatLockService seatLockService,
             StripeCheckoutGateway stripeCheckoutGateway,
             StripeProperties stripeProperties,
             FrontendProperties frontendProperties) {
         this.bookingService = bookingService;
-        this.bookingRepository = bookingRepository;
-        this.bookingSeatRepository = bookingSeatRepository;
         this.paymentRepository = paymentRepository;
-        this.seatLockService = seatLockService;
         this.stripeCheckoutGateway = stripeCheckoutGateway;
         this.stripeProperties = stripeProperties;
         this.frontendProperties = frontendProperties;
@@ -74,16 +68,6 @@ public class PaymentService {
     @Transactional
     public CheckoutSessionResponse createCheckoutSession(UUID userId, UUID bookingId) {
         Booking booking = bookingService.loadPendingBookingForCheckout(userId, bookingId);
-
-        // Extend the hold to cover a realistic payment-page duration — both
-        // the DB row and the Redis seat locks, kept in lockstep so neither
-        // can outlive the other (see CHECKOUT_HOLD_DURATION javadoc).
-        Instant newExpiresAt = Instant.now().plus(CHECKOUT_HOLD_DURATION);
-        booking.extendHold(newExpiresAt);
-        bookingRepository.saveAndFlush(booking);
-        bookingSeatRepository.findByBookingId(bookingId)
-                .forEach(bookingSeat -> seatLockService.extend(
-                        booking.getShowtime().getId(), bookingSeat.getSeat().getId(), CHECKOUT_HOLD_DURATION));
 
         Showtime showtime = booking.getShowtime();
         String productName = "%s · %s".formatted(showtime.getMovie().getTitle(), showtime.getHall().getName());
@@ -131,29 +115,42 @@ public class PaymentService {
     /**
      * Idempotency anchor: the row-locked lookup by stripe_session_id
      * (unique) serializes concurrent deliveries of the same event, and the
-     * already-SUCCEEDED check makes a redelivered/duplicated event a no-op
-     * — no separate processed-event-id log is needed because this event
-     * type can only meaningfully fire once per session's lifecycle (see
-     * CLAUDE.md Phase 6 for the full reasoning).
+     * already-terminal-status check makes a redelivered/duplicated event a
+     * no-op — no separate processed-event-id log is needed because this
+     * event type can only meaningfully fire once per session's lifecycle
+     * (see CLAUDE.md Phase 6 for the full reasoning).
+     *
+     * <p>The booking may no longer be PENDING by the time this arrives (it
+     * can be lazily expired the instant its 5-minute hold elapses, well
+     * before Stripe's own 30-minute session floor — see
+     * onBookingReleased for why we don't just wait for that to happen
+     * passively). When that's the case, the payment is recorded as
+     * {@link PaymentStatus#ORPHANED_SUCCESS} instead of being silently
+     * dropped or incorrectly resurrecting the booking to CONFIRMED — money
+     * was captured for a booking that may no longer own its seat, which
+     * needs a human to reconcile, not an automatic refund (out of scope for
+     * this MVP).
      */
     private void handleCheckoutSessionCompleted(Event event) {
         Session session = extractSession(event);
         Payment payment = paymentRepository
                 .findByStripeSessionIdForUpdate(session.getId())
                 .orElse(null);
-        if (payment == null || payment.getStatus() == PaymentStatus.SUCCEEDED) {
+        if (payment == null || payment.getStatus() != PaymentStatus.PENDING) {
             return;
         }
 
-        payment.markSucceeded(session.getPaymentIntent());
+        boolean confirmed = bookingService.confirmIfPending(payment.getBooking().getId());
+        if (confirmed) {
+            payment.markSucceeded(session.getPaymentIntent());
+        } else {
+            log.warn(
+                    "Stripe session {} completed successfully but booking {} was no longer PENDING — "
+                            + "marking payment ORPHANED_SUCCESS for manual reconciliation",
+                    session.getId(), payment.getBooking().getId());
+            payment.markOrphanedSuccess(session.getPaymentIntent());
+        }
         paymentRepository.saveAndFlush(payment);
-
-        // See BookingService.confirmIfPending: a false return here means
-        // the payment was captured but the booking could not be safely
-        // confirmed (already confirmed by another attempt, or its hold had
-        // already lapsed) — deliberately left as a flagged edge case rather
-        // than auto-refunded; see CLAUDE.md Phase 6.
-        bookingService.confirmIfPending(payment.getBooking().getId());
     }
 
     private void handleCheckoutSessionExpired(Event event) {
@@ -168,6 +165,41 @@ public class PaymentService {
         paymentRepository.saveAndFlush(payment);
         // Booking is deliberately left untouched — Phase 5's lazy expiry
         // already handles a PENDING booking whose hold has lapsed.
+    }
+
+    /**
+     * Reacts to a booking being released (lazily expired or cancelled —
+     * published by BookingService, which has no idea this listener, or
+     * payments at all, exist) by proactively telling Stripe to close out
+     * any Checkout Session still open for it, rather than waiting up to 30
+     * minutes for Stripe's own floor to do it. {@code AFTER_COMMIT} so this
+     * only runs once the booking's released status is durably persisted —
+     * calling Stripe based on a transaction that might still roll back
+     * would be worse than not calling it at all.
+     *
+     * <p>A session that can't be expired (most often: it already completed
+     * — the payment succeeded in the narrow window before this ran) is not
+     * an error to propagate. That race is exactly what
+     * handleCheckoutSessionCompleted's ORPHANED_SUCCESS path exists for:
+     * whichever event Stripe sends next resolves it, so this listener just
+     * logs and leaves the Payment row as-is.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onBookingReleased(BookingReleasedEvent event) {
+        List<Payment> openAttempts = paymentRepository.findByBookingIdAndStatus(event.bookingId(), PaymentStatus.PENDING);
+        for (Payment payment : openAttempts) {
+            try {
+                stripeCheckoutGateway.expireSession(payment.getStripeSessionId());
+                payment.markFailed();
+                paymentRepository.saveAndFlush(payment);
+            } catch (StripeGatewayException e) {
+                log.warn(
+                        "Could not proactively expire Stripe session {} for released booking {} "
+                                + "(likely already completed/expired on Stripe's side): {}",
+                        payment.getStripeSessionId(), event.bookingId(), e.getMessage());
+            }
+        }
     }
 
     /**

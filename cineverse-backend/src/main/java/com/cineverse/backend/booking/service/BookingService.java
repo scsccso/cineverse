@@ -6,6 +6,7 @@ import com.cineverse.backend.booking.dto.ShowtimeSeatsResponse;
 import com.cineverse.backend.booking.entity.Booking;
 import com.cineverse.backend.booking.entity.BookingSeat;
 import com.cineverse.backend.booking.entity.BookingStatus;
+import com.cineverse.backend.booking.event.BookingReleasedEvent;
 import com.cineverse.backend.booking.exception.SeatUnavailableException;
 import com.cineverse.backend.booking.mapper.BookingMapper;
 import com.cineverse.backend.booking.repository.BookingRepository;
@@ -30,6 +31,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,6 +53,7 @@ public class BookingService {
     private final UserRepository userRepository;
     private final SeatLockService seatLockService;
     private final BookingMapper bookingMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public BookingService(
             BookingRepository bookingRepository,
@@ -59,7 +62,8 @@ public class BookingService {
             SeatRepository seatRepository,
             UserRepository userRepository,
             SeatLockService seatLockService,
-            BookingMapper bookingMapper) {
+            BookingMapper bookingMapper,
+            ApplicationEventPublisher eventPublisher) {
         this.bookingRepository = bookingRepository;
         this.bookingSeatRepository = bookingSeatRepository;
         this.showtimeRepository = showtimeRepository;
@@ -67,6 +71,7 @@ public class BookingService {
         this.userRepository = userRepository;
         this.seatLockService = seatLockService;
         this.bookingMapper = bookingMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -175,6 +180,7 @@ public class BookingService {
 
         booking.markCancelled();
         bookingRepository.saveAndFlush(booking);
+        eventPublisher.publishEvent(new BookingReleasedEvent(bookingId));
     }
 
     @Transactional
@@ -246,6 +252,7 @@ public class BookingService {
         if (BookingStateMachine.shouldLazilyExpire(booking.getStatus(), booking.getExpiresAt(), Instant.now())) {
             booking.markExpired();
             bookingRepository.saveAndFlush(booking);
+            eventPublisher.publishEvent(new BookingReleasedEvent(booking.getId()));
         }
         return booking;
     }
@@ -273,6 +280,7 @@ public class BookingService {
         }
         if (!newlyExpired.isEmpty()) {
             bookingRepository.saveAllAndFlush(newlyExpired);
+            newlyExpired.forEach(booking -> eventPublisher.publishEvent(new BookingReleasedEvent(booking.getId())));
         }
         if (statusByBookingId.isEmpty()) {
             return Map.of();

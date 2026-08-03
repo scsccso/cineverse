@@ -4,22 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.cineverse.backend.booking.entity.Booking;
-import com.cineverse.backend.booking.entity.BookingSeat;
-import com.cineverse.backend.booking.entity.BookingStatus;
-import com.cineverse.backend.booking.repository.BookingRepository;
-import com.cineverse.backend.booking.repository.BookingSeatRepository;
+import com.cineverse.backend.booking.event.BookingReleasedEvent;
 import com.cineverse.backend.booking.service.BookingService;
-import com.cineverse.backend.booking.service.SeatLockService;
 import com.cineverse.backend.cinema.entity.Cinema;
 import com.cineverse.backend.cinema.entity.Hall;
-import com.cineverse.backend.cinema.entity.Seat;
-import com.cineverse.backend.cinema.entity.SeatType;
 import com.cineverse.backend.config.FrontendProperties;
 import com.cineverse.backend.movie.entity.Movie;
 import com.cineverse.backend.movie.entity.MovieStatus;
@@ -28,6 +22,7 @@ import com.cineverse.backend.payment.dto.CheckoutSessionResponse;
 import com.cineverse.backend.payment.entity.Payment;
 import com.cineverse.backend.payment.entity.PaymentStatus;
 import com.cineverse.backend.payment.exception.InvalidStripeSignatureException;
+import com.cineverse.backend.payment.exception.StripeGatewayException;
 import com.cineverse.backend.payment.gateway.CheckoutSessionSpec;
 import com.cineverse.backend.payment.gateway.CreatedCheckoutSession;
 import com.cineverse.backend.payment.gateway.StripeCheckoutGateway;
@@ -56,12 +51,13 @@ import org.springframework.test.util.ReflectionTestUtils;
 /**
  * Pure-Mockito coverage of PaymentService's own logic — the parts that
  * don't need a real database or a real Stripe account: checkout-creation
- * math/wiring, and the webhook dispatcher's idempotency *guard* (does it
- * skip already-terminal payments and leave bookingService alone?). The
+ * wiring, the webhook dispatcher's idempotency/orphaned-success guard, and
+ * the onBookingReleased listener's proactive-expire guard. The idempotency
  * guard's underlying mechanism (a real Postgres row lock actually
- * serializing two concurrent/duplicate deliveries) and real signature
- * verification are covered by PaymentFlowIntegrationTest instead — neither
- * means anything against a mock.
+ * serializing two concurrent/duplicate deliveries), real signature
+ * verification, and the full late-payment/seat-not-stolen-back scenario are
+ * covered by PaymentFlowIntegrationTest instead — none of those mean
+ * anything against a mock.
  */
 @ExtendWith(MockitoExtension.class)
 class PaymentServiceTest {
@@ -71,13 +67,7 @@ class PaymentServiceTest {
     @Mock
     private BookingService bookingService;
     @Mock
-    private BookingRepository bookingRepository;
-    @Mock
-    private BookingSeatRepository bookingSeatRepository;
-    @Mock
     private PaymentRepository paymentRepository;
-    @Mock
-    private SeatLockService seatLockService;
     @Mock
     private StripeCheckoutGateway stripeCheckoutGateway;
 
@@ -88,29 +78,20 @@ class PaymentServiceTest {
         StripeProperties stripeProperties = new StripeProperties("sk_test_dummy", WEBHOOK_SECRET, "myr");
         FrontendProperties frontendProperties = new FrontendProperties("http://localhost:3000");
         paymentService = new PaymentService(
-                bookingService,
-                bookingRepository,
-                bookingSeatRepository,
-                paymentRepository,
-                seatLockService,
-                stripeCheckoutGateway,
-                stripeProperties,
-                frontendProperties);
+                bookingService, paymentRepository, stripeCheckoutGateway, stripeProperties, frontendProperties);
     }
 
     @Test
-    void createCheckoutSessionExtendsHoldAndCreatesPendingPaymentRow() {
+    void createCheckoutSessionCreatesPendingPaymentRowWithoutTouchingTheBookingsHold() {
         UUID userId = UUID.randomUUID();
         UUID bookingId = UUID.randomUUID();
         UUID showtimeId = UUID.randomUUID();
-        UUID seatId = UUID.randomUUID();
 
         Showtime showtime = showtime(showtimeId, "Interstellar", "Hall 1");
-        Booking booking = booking(bookingId, showtime, new BigDecimal("50.00"));
-        BookingSeat bookingSeat = new BookingSeat(booking, seat(seatId), new BigDecimal("50.00"));
+        Instant originalExpiresAt = Instant.now().plus(Duration.ofMinutes(5));
+        Booking booking = booking(bookingId, showtime, new BigDecimal("50.00"), originalExpiresAt);
 
         when(bookingService.loadPendingBookingForCheckout(userId, bookingId)).thenReturn(booking);
-        when(bookingSeatRepository.findByBookingId(bookingId)).thenReturn(List.of(bookingSeat));
         when(stripeCheckoutGateway.createSession(any()))
                 .thenReturn(new CreatedCheckoutSession("cs_test_123", "https://checkout.stripe.com/pay/cs_test_123"));
 
@@ -120,12 +101,10 @@ class PaymentServiceTest {
 
         assertThat(response.checkoutUrl()).isEqualTo("https://checkout.stripe.com/pay/cs_test_123");
 
-        // Hold extended to 35 minutes (both the DB row and every seat's Redis TTL) — see PaymentService.CHECKOUT_HOLD_DURATION.
-        assertThat(booking.getExpiresAt()).isBetween(
-                before.plus(PaymentService.CHECKOUT_HOLD_DURATION).minusSeconds(5),
-                after.plus(PaymentService.CHECKOUT_HOLD_DURATION).plusSeconds(5));
-        verify(bookingRepository).saveAndFlush(booking);
-        verify(seatLockService).extend(showtimeId, seatId, PaymentService.CHECKOUT_HOLD_DURATION);
+        // Phase 5's 5-minute hold is left completely untouched by checkout —
+        // see CLAUDE.md Phase 6 for why (widening it was rejected in favor
+        // of proactively expiring the Stripe session on release instead).
+        assertThat(booking.getExpiresAt()).isEqualTo(originalExpiresAt);
 
         ArgumentCaptor<CheckoutSessionSpec> specCaptor = ArgumentCaptor.forClass(CheckoutSessionSpec.class);
         verify(stripeCheckoutGateway).createSession(specCaptor.capture());
@@ -137,8 +116,7 @@ class PaymentServiceTest {
                 "http://localhost:3000/bookings/" + bookingId + "/confirmed?session_id={CHECKOUT_SESSION_ID}");
         assertThat(spec.cancelUrl()).isEqualTo(
                 "http://localhost:3000/showtimes/" + showtimeId + "/seats?bookingId=" + bookingId);
-        // Stripe's own 30-minute floor — kept 5 minutes shorter than the internal hold (CHECKOUT_HOLD_DURATION)
-        // so Stripe's hosted page can never outlive the seat lock backing it.
+        // Stripe's own hard floor — unavoidable, unlike the internal hold above.
         assertThat(spec.expiresAt()).isBetween(
                 before.plus(PaymentService.STRIPE_SESSION_DURATION).minusSeconds(5),
                 after.plus(PaymentService.STRIPE_SESSION_DURATION).plusSeconds(5));
@@ -182,7 +160,9 @@ class PaymentServiceTest {
     @Test
     void checkoutSessionCompletedConfirmsBookingWhenPaymentWasStillPending() {
         UUID bookingId = UUID.randomUUID();
-        Booking booking = booking(bookingId, showtime(UUID.randomUUID(), "Dune", "Hall 2"), new BigDecimal("30.00"));
+        Booking booking = booking(
+                bookingId, showtime(UUID.randomUUID(), "Dune", "Hall 2"), new BigDecimal("30.00"),
+                Instant.now().plus(Duration.ofMinutes(5)));
         Payment payment = new Payment(booking, "cs_test_ok", new BigDecimal("30.00"), "myr");
         when(paymentRepository.findByStripeSessionIdForUpdate("cs_test_ok")).thenReturn(Optional.of(payment));
         when(bookingService.confirmIfPending(bookingId)).thenReturn(true);
@@ -199,8 +179,32 @@ class PaymentServiceTest {
     }
 
     @Test
-    void checkoutSessionCompletedIsANoOpWhenAlreadySucceeded() {
-        Booking booking = booking(UUID.randomUUID(), showtime(UUID.randomUUID(), "Dune", "Hall 2"), new BigDecimal("30.00"));
+    void checkoutSessionCompletedRecordsOrphanedSuccessWhenBookingNoLongerPending() {
+        UUID bookingId = UUID.randomUUID();
+        Booking booking = booking(
+                bookingId, showtime(UUID.randomUUID(), "Dune", "Hall 2"), new BigDecimal("30.00"),
+                Instant.now().minus(Duration.ofMinutes(1)));
+        Payment payment = new Payment(booking, "cs_test_late", new BigDecimal("30.00"), "myr");
+        when(paymentRepository.findByStripeSessionIdForUpdate("cs_test_late")).thenReturn(Optional.of(payment));
+        // Booking already lazily expired (or was cancelled, or confirmed by another attempt) by the time this arrives.
+        when(bookingService.confirmIfPending(bookingId)).thenReturn(false);
+
+        String payload = checkoutSessionCompletedPayload("cs_test_late", "pi_test_late");
+        String signature = sign(payload, WEBHOOK_SECRET);
+
+        paymentService.handleWebhookEvent(payload, signature);
+
+        // Money was captured (recorded for reconciliation) but the booking is NOT resurrected to CONFIRMED.
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.ORPHANED_SUCCESS);
+        assertThat(payment.getStripePaymentIntentId()).isEqualTo("pi_test_late");
+        verify(paymentRepository).saveAndFlush(payment);
+    }
+
+    @Test
+    void checkoutSessionCompletedIsANoOpWhenAlreadyTerminal() {
+        Booking booking = booking(
+                UUID.randomUUID(), showtime(UUID.randomUUID(), "Dune", "Hall 2"), new BigDecimal("30.00"),
+                Instant.now().plus(Duration.ofMinutes(5)));
         Payment alreadyProcessed = new Payment(booking, "cs_test_dup", new BigDecimal("30.00"), "myr");
         alreadyProcessed.markSucceeded("pi_original");
         when(paymentRepository.findByStripeSessionIdForUpdate("cs_test_dup")).thenReturn(Optional.of(alreadyProcessed));
@@ -218,7 +222,9 @@ class PaymentServiceTest {
 
     @Test
     void checkoutSessionExpiredMarksPaymentFailedWithoutTouchingBooking() {
-        Booking booking = booking(UUID.randomUUID(), showtime(UUID.randomUUID(), "Dune", "Hall 2"), new BigDecimal("30.00"));
+        Booking booking = booking(
+                UUID.randomUUID(), showtime(UUID.randomUUID(), "Dune", "Hall 2"), new BigDecimal("30.00"),
+                Instant.now().plus(Duration.ofMinutes(5)));
         Payment payment = new Payment(booking, "cs_test_expired", new BigDecimal("30.00"), "myr");
         when(paymentRepository.findByStripeSessionIdForUpdate("cs_test_expired")).thenReturn(Optional.of(payment));
 
@@ -230,7 +236,6 @@ class PaymentServiceTest {
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
         verify(paymentRepository).saveAndFlush(payment);
         verify(bookingService, never()).confirmIfPending(any());
-        verify(bookingRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -253,9 +258,63 @@ class PaymentServiceTest {
         verify(bookingService, never()).confirmIfPending(any());
     }
 
-    private Booking booking(UUID id, Showtime showtime, BigDecimal totalPrice) {
+    @Test
+    void bookingReleasedExpiresEveryOpenStripeSessionAndMarksThePaymentsFailed() {
+        UUID bookingId = UUID.randomUUID();
+        Booking booking = booking(
+                bookingId, showtime(UUID.randomUUID(), "Dune", "Hall 2"), new BigDecimal("30.00"),
+                Instant.now().minus(Duration.ofMinutes(1)));
+        // Two abandoned checkout attempts for the same booking (e.g. retried across tabs) — both must be expired.
+        Payment first = new Payment(booking, "cs_test_attempt_1", new BigDecimal("30.00"), "myr");
+        Payment second = new Payment(booking, "cs_test_attempt_2", new BigDecimal("30.00"), "myr");
+        when(paymentRepository.findByBookingIdAndStatus(bookingId, PaymentStatus.PENDING))
+                .thenReturn(List.of(first, second));
+
+        paymentService.onBookingReleased(new BookingReleasedEvent(bookingId));
+
+        verify(stripeCheckoutGateway).expireSession("cs_test_attempt_1");
+        verify(stripeCheckoutGateway).expireSession("cs_test_attempt_2");
+        assertThat(first.getStatus()).isEqualTo(PaymentStatus.FAILED);
+        assertThat(second.getStatus()).isEqualTo(PaymentStatus.FAILED);
+        verify(paymentRepository).saveAndFlush(first);
+        verify(paymentRepository).saveAndFlush(second);
+    }
+
+    @Test
+    void bookingReleasedLeavesThePaymentUntouchedWhenStripeCannotExpireTheSession() {
+        UUID bookingId = UUID.randomUUID();
+        Booking booking = booking(
+                bookingId, showtime(UUID.randomUUID(), "Dune", "Hall 2"), new BigDecimal("30.00"),
+                Instant.now().minus(Duration.ofMinutes(1)));
+        Payment payment = new Payment(booking, "cs_test_already_completed", new BigDecimal("30.00"), "myr");
+        when(paymentRepository.findByBookingIdAndStatus(bookingId, PaymentStatus.PENDING))
+                .thenReturn(List.of(payment));
+        // Simulates the payment having already succeeded on Stripe's side moments before this ran.
+        doThrow(new StripeGatewayException("session already completed", new RuntimeException()))
+                .when(stripeCheckoutGateway)
+                .expireSession("cs_test_already_completed");
+
+        // Must not throw — a failed proactive-expire is informational, not fatal (the eventual
+        // checkout.session.completed webhook resolves it via the ORPHANED_SUCCESS path).
+        paymentService.onBookingReleased(new BookingReleasedEvent(bookingId));
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
+        verify(paymentRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void bookingReleasedIsANoOpWhenThereAreNoOpenCheckoutAttempts() {
+        UUID bookingId = UUID.randomUUID();
+        when(paymentRepository.findByBookingIdAndStatus(bookingId, PaymentStatus.PENDING)).thenReturn(List.of());
+
+        paymentService.onBookingReleased(new BookingReleasedEvent(bookingId));
+
+        verify(stripeCheckoutGateway, never()).expireSession(anyString());
+    }
+
+    private Booking booking(UUID id, Showtime showtime, BigDecimal totalPrice, Instant expiresAt) {
         User user = new User("customer@example.com", "hash", Role.CUSTOMER, "Test Customer");
-        Booking booking = new Booking(user, showtime, totalPrice, Instant.now().plus(Duration.ofMinutes(5)));
+        Booking booking = new Booking(user, showtime, totalPrice, expiresAt);
         ReflectionTestUtils.setField(booking, "id", id);
         return booking;
     }
@@ -270,14 +329,6 @@ class PaymentServiceTest {
         Showtime showtime = new Showtime(movie, hall, Instant.now(), Instant.now().plus(Duration.ofHours(2)), new BigDecimal("25.00"));
         ReflectionTestUtils.setField(showtime, "id", id);
         return showtime;
-    }
-
-    private Seat seat(UUID id) {
-        Cinema cinema = new Cinema("CineVerse Downtown", "1 Main St");
-        Hall hall = new Hall(cinema, "Hall 1", 6, 10);
-        Seat seat = new Seat(hall, "A", 1, SeatType.STANDARD);
-        ReflectionTestUtils.setField(seat, "id", id);
-        return seat;
     }
 
     private String checkoutSessionCompletedPayload(String sessionId, String paymentIntentId) {

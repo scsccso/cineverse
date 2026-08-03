@@ -2,7 +2,10 @@ package com.cineverse.backend.payment.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -13,15 +16,19 @@ import com.cineverse.backend.booking.dto.CreateBookingRequest;
 import com.cineverse.backend.booking.entity.Booking;
 import com.cineverse.backend.booking.entity.BookingStatus;
 import com.cineverse.backend.booking.repository.BookingRepository;
+import com.cineverse.backend.booking.service.SeatLockService;
 import com.cineverse.backend.cinema.repository.SeatRepository;
 import com.cineverse.backend.movie.dto.MovieRequest;
 import com.cineverse.backend.movie.entity.MovieStatus;
 import com.cineverse.backend.payment.entity.Payment;
 import com.cineverse.backend.payment.entity.PaymentStatus;
+import com.cineverse.backend.payment.exception.StripeGatewayException;
 import com.cineverse.backend.payment.gateway.CreatedCheckoutSession;
 import com.cineverse.backend.payment.gateway.StripeCheckoutGateway;
 import com.cineverse.backend.payment.repository.PaymentRepository;
 import com.cineverse.backend.showtime.dto.CreateShowtimeRequest;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -44,6 +51,8 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -99,21 +108,30 @@ class PaymentFlowIntegrationTest {
     @Autowired
     private PaymentRepository paymentRepository;
 
+    @Autowired
+    private SeatLockService seatLockService;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
+    @PersistenceContext
+    private EntityManager entityManager;
+
     @MockitoBean
     private StripeCheckoutGateway stripeCheckoutGateway;
 
     @Test
-    void checkoutCreatesStripeSessionAndExtendsTheHold() throws Exception {
+    void checkoutCreatesStripeSessionWithoutTouchingTheBookingsFiveMinuteHold() throws Exception {
         String adminToken = loginAsAdmin();
         String customerToken = registerAndLoginCustomer();
         UUID showtimeId = createShowtime(adminToken, "2026-12-01T10:00:00Z");
         UUID bookingId = createPendingBooking(customerToken, showtimeId);
+        Instant originalExpiresAt = bookingRepository.findById(bookingId).orElseThrow().getExpiresAt();
         String stripeSessionId = "cs_test_" + UUID.randomUUID();
         String checkoutUrl = "https://checkout.stripe.com/pay/" + stripeSessionId;
         when(stripeCheckoutGateway.createSession(any()))
                 .thenReturn(new CreatedCheckoutSession(stripeSessionId, checkoutUrl));
 
-        Instant before = Instant.now();
         mockMvc.perform(post("/api/v1/bookings/{id}/checkout", bookingId)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken))
                 .andExpect(status().isOk())
@@ -121,10 +139,9 @@ class PaymentFlowIntegrationTest {
 
         Booking booking = bookingRepository.findById(bookingId).orElseThrow();
         assertThat(booking.getStatus()).isEqualTo(BookingStatus.PENDING);
-        // Extended well past Phase 5's original 5-minute hold — see
-        // PaymentService.CHECKOUT_HOLD_DURATION (35 min) for the exact value
-        // and why (Stripe Checkout Sessions can't expire in under 30 min).
-        assertThat(booking.getExpiresAt()).isAfter(before.plus(Duration.ofMinutes(30)));
+        // Phase 5's 5-minute hold is untouched by checkout — see CLAUDE.md
+        // Phase 6 for why (proactive Stripe-session expiry instead of widening it).
+        assertThat(booking.getExpiresAt()).isEqualTo(originalExpiresAt);
 
         List<Payment> payments = paymentRepository.findAll().stream()
                 .filter(p -> p.getBooking().getId().equals(bookingId))
@@ -209,6 +226,124 @@ class PaymentFlowIntegrationTest {
         assertThat(paymentRepository.findAll().stream()
                         .anyMatch(p -> p.getStripeSessionId().equals("cs_test_irrelevant")))
                 .isFalse();
+    }
+
+    @Test
+    void bookingReleaseProactivelyExpiresItsOpenStripeSession() throws Exception {
+        String adminToken = loginAsAdmin();
+        String customerToken = registerAndLoginCustomer();
+        UUID showtimeId = createShowtime(adminToken, "2026-12-04T10:00:00Z");
+        UUID bookingId = createPendingBooking(customerToken, showtimeId);
+        String stripeSessionId = "cs_test_" + UUID.randomUUID();
+        when(stripeCheckoutGateway.createSession(any()))
+                .thenReturn(new CreatedCheckoutSession(
+                        stripeSessionId, "https://checkout.stripe.com/pay/" + stripeSessionId));
+        mockMvc.perform(post("/api/v1/bookings/{id}/checkout", bookingId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken))
+                .andExpect(status().isOk());
+
+        forceExpiresAtIntoThePast(bookingId);
+
+        // Any read that touches this booking triggers Phase 5's lazy expiry,
+        // which — new in Phase 6 — publishes BookingReleasedEvent and
+        // (AFTER_COMMIT, same thread, so already done by the time this call
+        // returns) proactively expires the Stripe session behind it.
+        mockMvc.perform(get("/api/v1/showtimes/{id}/seats", showtimeId))
+                .andExpect(status().isOk());
+
+        verify(stripeCheckoutGateway).expireSession(stripeSessionId);
+        Payment payment = paymentRepository.findAll().stream()
+                .filter(p -> p.getStripeSessionId().equals(stripeSessionId))
+                .findFirst()
+                .orElseThrow();
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
+    }
+
+    @Test
+    void lateSuccessfulPaymentAfterBookingExpiredDoesNotStealTheSeatBackFromAnotherCustomer() throws Exception {
+        String adminToken = loginAsAdmin();
+        String firstCustomerToken = registerAndLoginCustomer();
+        String secondCustomerToken = registerAndLoginCustomer();
+        UUID showtimeId = createShowtime(adminToken, "2026-12-05T10:00:00Z");
+        UUID firstBookingId = createPendingBooking(firstCustomerToken, showtimeId);
+        String stripeSessionId = "cs_test_" + UUID.randomUUID();
+        when(stripeCheckoutGateway.createSession(any()))
+                .thenReturn(new CreatedCheckoutSession(
+                        stripeSessionId, "https://checkout.stripe.com/pay/" + stripeSessionId));
+        mockMvc.perform(post("/api/v1/bookings/{id}/checkout", firstBookingId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + firstCustomerToken))
+                .andExpect(status().isOk());
+
+        // Simulates the payment having actually already succeeded on
+        // Stripe's side in the narrow window before our own proactive
+        // expire-on-release call reaches Stripe — Stripe would reject
+        // expiring an already-completed session. Without this, the mocked
+        // gateway's default no-op "success" would mark the payment FAILED
+        // before the late webhook below ever arrives, which isn't the race
+        // this test is about.
+        doThrow(new StripeGatewayException("session already completed", new RuntimeException()))
+                .when(stripeCheckoutGateway)
+                .expireSession(stripeSessionId);
+
+        // First customer's hold lapses (they walked away without paying).
+        // forceExpiresAtIntoThePast only rewrites the DB row — in real
+        // production timing the Redis seat lock (set to the same instant at
+        // booking creation) would independently have expired via its own
+        // TTL by now too, so this releases it explicitly to faithfully
+        // simulate that much wall-clock time having actually passed, rather
+        // than leaving a stale lock a real 10-minutes-later reader would
+        // never actually encounter.
+        UUID seatId = seatRepository
+                .findByHallIdOrderByRowLabelAscColumnNumberAsc(UUID.fromString(SEEDED_HALL_ID))
+                .get(0)
+                .getId();
+        forceExpiresAtIntoThePast(firstBookingId);
+        seatLockService.unlock(showtimeId, seatId);
+        mockMvc.perform(get("/api/v1/showtimes/{id}/seats", showtimeId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.seats[0].status").value("AVAILABLE"));
+        assertThat(bookingRepository.findById(firstBookingId).orElseThrow().getStatus())
+                .isEqualTo(BookingStatus.EXPIRED);
+
+        // A second customer grabs the now-free seat.
+        UUID secondBookingId = createPendingBooking(secondCustomerToken, showtimeId);
+
+        // The first customer's Stripe payment now completes anyway (e.g. a
+        // network-delayed webhook, or they finished paying on Stripe's
+        // hosted page in the narrow window before our proactive expire call
+        // reached Stripe) — this must NOT confirm the first booking (its
+        // seat may no longer be its own) and must NOT touch the second
+        // customer's unrelated booking.
+        String payload = checkoutSessionCompletedPayload(stripeSessionId, "pi_test_" + UUID.randomUUID());
+        String signature = sign(payload, WEBHOOK_SECRET);
+        mockMvc.perform(post("/api/v1/webhooks/stripe")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Stripe-Signature", signature)
+                        .content(payload))
+                .andExpect(status().isOk());
+
+        assertThat(bookingRepository.findById(firstBookingId).orElseThrow().getStatus())
+                .isEqualTo(BookingStatus.EXPIRED);
+        assertThat(bookingRepository.findById(secondBookingId).orElseThrow().getStatus())
+                .isEqualTo(BookingStatus.PENDING);
+        Payment orphanedPayment = paymentRepository.findAll().stream()
+                .filter(p -> p.getStripeSessionId().equals(stripeSessionId))
+                .findFirst()
+                .orElseThrow();
+        assertThat(orphanedPayment.getStatus()).isEqualTo(PaymentStatus.ORPHANED_SUCCESS);
+
+        // The seat is still held by the second customer's booking, not reclaimed by the first.
+        mockMvc.perform(get("/api/v1/showtimes/{id}/seats", showtimeId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.seats[0].status").value("LOCKED"));
+    }
+
+    private void forceExpiresAtIntoThePast(UUID bookingId) {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                entityManager.createQuery("UPDATE Booking b SET b.expiresAt = :expiresAt WHERE b.id = :id")
+                        .setParameter("expiresAt", Instant.now().minus(Duration.ofMinutes(10)))
+                        .setParameter("id", bookingId)
+                        .executeUpdate());
     }
 
     private UUID createPendingBooking(String customerToken, UUID showtimeId) throws Exception {

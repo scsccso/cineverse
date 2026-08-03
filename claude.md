@@ -379,46 +379,85 @@ CASCADE"的错误。
   只被确认一次。
 - **Stripe Checkout Session 的 `expires_at` 硬性下限是创建后 30
   分钟**(Stripe API 的强制约束,查证于官方文档,不是猜测),远长于 Phase 5
-  的 5 分钟选座持有窗口——如果不处理这个落差,几乎每一次真实支付(用户在
-  Stripe 托管页面填卡号、走 3D Secure 等)都会在座位持有到期之后才完成,
-  届时座位可能已经被 Redis TTL 释放、甚至被别人重新锁定。解法:
-  `POST /bookings/{id}/checkout` 成功创建 Stripe session 的同时,把这个
-  booking 的持有窗口从 5 分钟**延长到 35 分钟**(`Booking.extendHold` +
-  `SeatLockService.extend` 同时延长 DB 记录和 Redis 座位锁的 TTL,两者用
-  同一个时长,不会互相拖后腿),Stripe 这边的 `expires_at` 设成 30
-  分钟——**内部持有窗口比 Stripe 自己的 session 窗口多留 5 分钟缓冲**,
-  确保"Stripe 那边支付刚好在最后一秒完成"这种情况仍然落在我们自己的持有
-  窗口内。选座阶段的 5 分钟倒计时文案和逻辑本身不变(那描述的是"决定要不要
-  付款"这个阶段,依然准确)——只有真正点击"去支付"、进入 Stripe 托管页面
-  之后才延长。
-- **两层防御防止"迟到的成功支付"污染 booking 状态**:`BookingService
-  .confirmIfPending` 只在 booking 当前确实是 `PENDING` 时才转
-  `CONFIRMED`,如果已经是 `EXPIRED`/`CANCELLED`(持有窗口在支付完成前就
-  过了,理论上因为上面 35/30 分钟的缓冲设计已经很难触发,但不是不可能——
-  比如用户开着两个标签页分别发起了两次 checkout)或者已经被另一次支付
-  confirm 过,webhook 处理会照常把这次的 `Payment` 行标记
-  `SUCCEEDED`(钱确实收到了,记账要准确)但**不会**把 booking 状态改回
-  `CONFIRMED`——防止"复活"一个座位可能已经易主的订单。这种"钱收到了但
-  订单没法安全确认"的边界场景(意味着可能产生了重复收费)目前只做到"不
-  破坏数据一致性",不做自动退款——那需要额外的客服/对账流程,是有意收窄
-  的 MVP 边界,不是遗漏。
-- **`checkout.session.expired` 只标记 `Payment.status = FAILED`,不碰
-  booking**:booking 状态交给 Phase 5 已有的懒惰过期机制处理(见 Phase 5 的
-  "懒惰过期"决定),这里重复写一遍反而会有两套判断逻辑互相打架的风险。
+  的 5 分钟选座持有窗口。第一版实现选择了"把 booking 的持有窗口从 5 分钟
+  延长到 35 分钟去迁就 Stripe"——这个方案被推翻了,原因和最终方案见下面
+  单独一条,这是本 Phase 最重要的权衡,值得完整记录。
+
+- **权衡:座位持有窗口维持 5 分钟不变,反过来主动让 Stripe session 提前
+  过期,而不是放宽内部持有窗口去迁就 Stripe**。
+  - **被推翻的方案是什么、为什么当时会倾向于选它**:把 booking 的
+    `expires_at`(以及对应的 Redis 座位锁 TTL)从 5 分钟延长到 35
+    分钟——这样无论用户在 Stripe 托管页面填卡号、走 3D Secure 花多久,只要
+    在 Stripe 自己 30 分钟的 session 窗口内完成,都还落在我们自己的持有
+    窗口内,不会出现"钱刚付完但座位已经不是 PENDING"的落差。这个方案能让
+    Stripe 顺利接入,但没有认真评估代价就采纳了。
+  - **代价是什么**:Phase 5 把持有窗口定在 5 分钟,是"座位快速流转"这个
+    设计意图的直接体现——选了座不付款,尽快把座位还给别人。只要用户点了
+    "去支付"却没有真正走完支付流程(哪怕只是点开付款页看了眼价格就犹豫了、
+    或者临时决定不买),座位就会被锁 35 分钟,是原设计的 7 倍。真实使用中
+    "点了去支付但没付款"大概率比"点了去支付并在 5~35 分钟之间完成付款"更
+    常见,所以这个方案实际上是用"绝大多数放弃支付的人都要多等 30 分钟"去
+    换"极少数支付较慢的人不必面对一个边界情况"——这个 trade-off 在两个
+    方向上都选错了权重,是为了让 Stripe 能用而顺势接受的妥协,不是经过权衡
+    后的决定。
+  - **最终方案**:座位锁/booking 的 5 分钟过期时间完全不变——不因为 Stripe
+    的限制而改动 Phase 5 的核心设计意图。Checkout Session 仍然按 Stripe
+    的硬性要求创建成 30 分钟(这个绕不过去)。落差由 booking 一旦被释放
+    (无论是懒惰过期,还是用户主动取消)就反过来**主动调用 Stripe API 把
+    对应的 Checkout Session 标记为 expired**(`Session.retrieve(id,
+    opts).expire(opts)`,见 `StripeCheckoutGateway.expireSession` /
+    `StripeCheckoutGatewayImpl`)来解决,而不是被动等 Stripe 自己 30
+    分钟后过期。`BookingService`(lazy expiry 的两处调用点 +
+    `cancel()`)在释放 booking 时发布 `BookingReleasedEvent`(纯 Spring
+    应用事件,`booking` 包完全不知道 `payment` 包、Stripe 的存在),
+    `PaymentService.onBookingReleased`(`@TransactionalEventListener
+    (phase = AFTER_COMMIT)`,只在释放 booking 的事务真正提交后才触发,
+    避免基于一个可能回滚的事务去调用 Stripe 这种不可逆操作)监听这个事件,
+    查出该 booking 名下所有还是 `PENDING` 的 `Payment` 行,逐个调用
+    Stripe 的 expire。这样"座位快速流转"这个 Phase 5 的核心设计意图完全
+    保留,只是多了一步"尽快通知 Stripe 这边也别再等了"。
+  - **Stripe 拒绝过期请求(通常因为 session 已经 complete)不是错误,是
+    正常的竞态分支**:`onBookingReleased` 调用 `expireSession` 失败时只
+    记录一条 warning 日志,`Payment` 行原样保留、不抛异常——这条竞态(我们
+    发起"过期"请求的同时,用户恰好在 Stripe 那边完成了支付)由下面
+    `ORPHANED_SUCCESS` 状态的分支去处理,不是这里要解决的问题。
+  - **`ORPHANED_SUCCESS`:钱到账但 booking 已经不能安全确认时的第三种终态**
+    (V11 migration 在原来的 `PENDING`/`SUCCEEDED`/`FAILED` 上新增)。
+    `handleCheckoutSessionCompleted` 收到 webhook 时先调用
+    `BookingService.confirmIfPending`——只有 booking 当前确实还是
+    `PENDING` 才会被转 `CONFIRMED` 并把 `Payment` 标记 `SUCCEEDED`;如果
+    booking 已经是 `EXPIRED`(懒惰过期 + 上面的主动 expire 双重收紧之后,
+    这个窗口比第一版方案下窄得多,但 Stripe 支付到 webhook 到达之间仍有
+    真实的网络延迟,不可能完全消除)、`CANCELLED`,或者已经被另一次
+    checkout 尝试 confirm 过,这次 webhook 会把 `Payment` 标记
+    `ORPHANED_SUCCESS`(而不是 `SUCCEEDED`)并打一条 warning 日志——钱确实
+    收到了,记录下来留痕,但**不会**把 booking 状态改回 `CONFIRMED`(座位
+    可能已经易主),也**不自动退款**(那是运营/客服层面的对账流程,不在这
+    个 Phase 范围内,但必须是"可发现、有记录"的,不能悄无声息地把这笔钱的
+    去向弄丢)。`PaymentFlowIntegrationTest
+    .lateSuccessfulPaymentAfterBookingExpiredDoesNotStealTheSeatBackFromAnotherCustomer`
+    完整覆盖这个场景:第一个客户的 booking 过期释放座位、第二个客户订走同
+    一个座位、第一个客户的支付这时才姗姗来迟地成功,断言第一个 booking
+    仍是 `EXPIRED`、第二个客户的 booking 完全不受影响、`Payment` 变成
+    `ORPHANED_SUCCESS`,不会把座位从第二个客户手里抢回来。
+  - **`checkout.session.expired` 只标记 `Payment.status = FAILED`,不碰
+    booking**:booking 状态交给 Phase 5 已有的懒惰过期机制处理(见 Phase 5
+    的"懒惰过期"决定),这里重复写一遍反而会有两套判断逻辑互相打架的风险。
 - **用户在 Stripe 页面点返回/关标签页放弃支付**:Stripe 不会给我们发任何
-  通知,booking 保持 `PENDING` 直到懒惰过期机制在下一次读取时自然清理——
-  这是有意为之,不是遗漏(题目本身也是这么问的,这里正式记录下来)。
+  通知,booking 保持 `PENDING` 直到懒惰过期机制在下一次读取时自然清理(这次
+  释放同时会触发上面的主动 expire-session)——这是有意为之,不是遗漏
+  (题目本身也是这么问的,这里正式记录下来)。
 - **前端"取消支付返回选座页"需要一个额外机制才能真正可用**:cancel_url
   设成 `/showtimes/{showtimeId}/seats?bookingId={id}`,但光加这个 query
   参数不够——`SeatPicker` 原本的 `booking` state 只在"当前这次组件生命周期
   里刚创建成功的订单"时才有值,用户从 Stripe 页面返回时是全新的页面加载,
   这个 state 是空的,如果不处理,用户会看到自己选的座位显示成"被锁定"
-  (灰色虚线+锁图标,和别人锁定的座位视觉上无法区分)却点不动,一直卡到
-  35 分钟持有窗口过期。加了一个 resume 机制:`SeatPicker` 收到
-  `initialBookingId` 时用 `callAuthorized` 拉一次 `GET /bookings/{id}`,
-  如果还是 `PENDING` 就直接展示支付确认页(可以重新点"去支付"),不是
-  `PENDING` 就当作普通座位图处理;处理完用 `router.replace` 把 query 参数
-  从 URL 里去掉,避免刷新页面重复触发。
+  (灰色虚线+锁图标,和别人锁定的座位视觉上无法区分)却点不动。加了一个
+  resume 机制:`SeatPicker` 收到 `initialBookingId` 时用 `callAuthorized`
+  拉一次 `GET /bookings/{id}`,如果还是 `PENDING` 就直接展示支付确认页
+  (可以重新点"去支付"),不是 `PENDING`(现在持有窗口维持 5 分钟不变,
+  支付花了一会儿的话大概率已经是这种情况)就当作普通座位图处理;处理完用
+  `router.replace` 把 query 参数从 URL 里去掉,避免刷新页面重复触发。
 - **支付成功页 `/bookings/{id}/confirmed` 用轮询确认状态,不直接信任
   redirect 本身**:Stripe 的 `success_url` 跳转和 webhook 到达是两个独立的
   异步事件,谁先到不保证——落地页可能在 booking 真正变成 `CONFIRMED` 之前

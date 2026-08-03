@@ -81,4 +81,9 @@ public class Payment {
     public void markFailed() {
         this.status = PaymentStatus.FAILED;
     }
+
+    public void markOrphanedSuccess(String stripePaymentIntentId) {
+        this.status = PaymentStatus.ORPHANED_SUCCESS;
+        this.stripePaymentIntentId = stripePaymentIntentId;
+    }
 }
