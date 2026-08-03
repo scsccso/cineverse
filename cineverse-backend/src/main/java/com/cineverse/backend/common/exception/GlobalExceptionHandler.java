@@ -9,6 +9,9 @@ import com.cineverse.backend.payment.exception.InvalidStripeSignatureException;
 import com.cineverse.backend.showtime.exception.ShowtimeConflictException;
 import com.cineverse.backend.showtime.exception.ShowtimeHasBookingsException;
 import com.cineverse.backend.storage.exception.InvalidFileException;
+import com.cineverse.backend.ticket.exception.BookingNotConfirmedException;
+import com.cineverse.backend.ticket.exception.InvalidTicketCodeException;
+import com.cineverse.backend.ticket.exception.TicketAlreadyRedeemedException;
 import java.time.Instant;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
@@ -86,6 +89,21 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(InvalidStripeSignatureException.class)
     public ResponseEntity<ErrorResponse> handleInvalidStripeSignature(InvalidStripeSignatureException ex) {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidTicketCodeException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidTicketCode(InvalidTicketCodeException ex) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(BookingNotConfirmedException.class)
+    public ResponseEntity<ErrorResponse> handleBookingNotConfirmed(BookingNotConfirmedException ex) {
+        return build(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(TicketAlreadyRedeemedException.class)
+    public ResponseEntity<ErrorResponse> handleTicketAlreadyRedeemed(TicketAlreadyRedeemedException ex) {
+        return build(HttpStatus.CONFLICT, ex.getMessage());
     }
 
     @ExceptionHandler(ResponseStatusException.class)

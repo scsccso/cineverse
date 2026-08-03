@@ -2,8 +2,9 @@
 
 > 本文件是本项目的唯一真相来源(single source of truth)。每次开新的 Claude Code session,先读这份文件。
 > 更新时间:2026-08(随项目迭代持续更新)
-> 当前进度:Phase 0~6 已完成(含 Phase 6 Stripe Checkout 支付),Phase 7(订单/电子票)未开始 —— 详见第 3 节。
-> 详细的API调试步骤见 docs/DEVELOPMENT.md,面向招聘官的项目介绍见 README.md,本文件是面向Claude Code的项目记忆。
+> 当前进度:Phase 0~7 已完成(含 Phase 7 电子票 + 入场核销),Phase 8(管理后台/报表)未开始 —— 详见第 3 节。
+> 详细的API调试步骤见 docs/DEVELOPMENT.md,数据库 schema 详情见 docs/DATABASE.md,
+> 面向招聘官的项目介绍见 README.md,本文件是面向Claude Code的项目记忆。
 
 ---
 
@@ -128,6 +129,10 @@
 - 权限模型:`ROLE_CUSTOMER` / `ROLE_ADMIN`,后续如有影院经理角色再扩展
 - **公开路由 vs 登录路由要在路由设计阶段就分开**:浏览电影、场次列表属于公开只读 API,不应该依赖登录态
 - 每个模块交付时必须有:API文档(Swagger)+ 至少核心逻辑的单元测试 + README更新
+- **新增/修改 Flyway migration,交付前必须同步更新 `docs/DATABASE.md`**:新表的
+  字段/主键/外键(尤其是 `ON DELETE` 策略)、关系图、引入的 Phase,都要补充
+  进去,和更新 CLAUDE.md/README.md 一样是每个 Phase 完成的强制项,不是可选项
+  ——这份文档存在的意义就是不用每次都去翻 migration 原文件拼凑 schema 全貌。
 
 ---
 
@@ -471,8 +476,72 @@ CASCADE"的错误。
   `amount * 100` 的换算,不让这个 Stripe API 特有的细节渗透到领域模型/
   数据库里。
 
-### Phase 7 — 订单/电子票(Order & E-ticket)
-- 订单记录、QR code 生成、入场核销 API(扫码校验 + 防止重复入场)
+### Phase 7 — 订单/电子票(Order & E-ticket)✅ 完成于 2026-08-04
+- Booking 支付成功(`CONFIRMED`)之后即拥有一张电子票;新增
+  `POST /api/v1/tickets/redeem`(仅 ADMIN,入场核销)。数据库只新增了
+  `bookings.redeemed_at` 一个字段(V12),没有新建 `tickets` 表——见下面的
+  关键决定。
+
+关键决定:
+- **票据编码复用 jjwt,不是自己手写 HMAC + base64url 拼接**:票据编码本质上
+  就是"一段签名过、防篡改的数据",这正是 JWT 已经标准化解决的问题,项目里
+  `JwtService`(access/refresh token)已经在用同一个库、同一种模式
+  (constructor 接收 secret 配置、`Jwts.builder()`/`Jwts.parser()`)。新增
+  `TicketCodeService` 完整照抄这个模式:`sign(bookingId)` 生成一个以
+  booking id 为 subject、带 `"type": "ticket"` claim 的签名 JWT;
+  `verify(ticketCode)` 校验签名 + type claim,失败统一抛
+  `InvalidTicketCodeException`(400)。没有必要重新发明签名验证/常量时间
+  比较这些 jjwt 已经处理好的细节。
+- **签名密钥和 JWT access/refresh secret 是三把独立的密钥**
+  (`app.ticket.signing-secret`,本地开发有 dev-only 默认值,prod profile
+  强制要求环境变量,和 JWT secret 的处理方式完全一致):轮换票据签名密钥
+  不该连带让所有人登出,反之亦然,和 access/refresh 两个密钥分开的理由
+  一样(见 `JwtProperties` 的注释)。
+- **没有新建 `tickets` 表,只在 `bookings` 上加了一个 `redeemed_at TIMESTAMPTZ
+  NULL` 字段**:一张"电子票"本质上就是一条已经 `CONFIRMED` 的 booking,
+  从"入场核验"这个角度重新看待而已,不是一个有独立生命周期的新实体,没必要
+  为此新建一张 1:1 关联的表。`redeemed_at` 用一个可空的时间戳同时表达
+  "有没有被核销"和"什么时候核销的"两件事——`NULL` = 未核销,非 `NULL` = 
+  核销时刻——不是"布尔值 + 时间戳"两个字段的组合(那种设计允许"已核销=true
+  但时间戳是 null"这种不该存在的非法状态)。票据编码本身**不落库**:它是
+  booking id + 签名密钥的确定性函数,每次 `GET /bookings/{id}` 需要时
+  现算(`BookingMapper` 在 `status == CONFIRMED` 时调用
+  `TicketCodeService.sign`),不需要也不应该持久化一份"官方版本"。
+- **`BookingMapper`(在 `booking` 包)依赖 `TicketCodeService`(在 `ticket`
+  包),但这不是循环依赖**:`TicketCodeService` 本身是一个纯签名/验证工具,
+  零依赖 `booking` 包任何东西(只吃一个 `UUID`);真正会反过来依赖
+  `booking` 包(`BookingRepository` 等)的是 `TicketService`(核销的业务
+  编排逻辑),它是另一个类。所以依赖方向始终是单向的:`booking` 包依赖的是
+  `TicketCodeService` 这个叶子工具类,不是 `TicketService`。
+- **核销接口设计成"提交一段扫码/手输的编码字符串",不是
+  `/bookings/{id}/redeem`**:工作人员扫码枪/手机扫到的是二维码里的原始
+  字符串(签名过的 JWT),不是 booking id 本身——先让前端解析出 booking id
+  再拼 URL 反而多一道没必要的转换。所以设计成独立的
+  `POST /api/v1/tickets/redeem`,请求体直接带原始编码字符串,后端自己验签
+  解析出 booking id。**这个 Phase 没有做扫码摄像头 UI**(前端只负责在
+  支付成功页渲染 QR 图案给顾客看,没有做"管理员用摄像头扫码"的界面)——
+  核销 API 本身已经就绪,以后加扫码 UI 只是多一个调用这个 API 的前端页面,
+  不需要改后端。
+- **核销校验顺序:先验签、再查 booking 状态是否 CONFIRMED、再查是否已核销
+  过**,三项都通过才标记核销并落库,任何一项失败都不产生副作用。签名不对
+  是 400(客户端提交的编码本身有问题),booking 不是 CONFIRMED 或者已经
+  核销过都是 409(状态冲突,不是编码格式问题)——延续了这个项目一贯的
+  "错误语义要精确"的风格(参考 Phase 2 那条 401 vs 403 的教训)。
+  `TicketFlowIntegrationTest.redeemingATicketTwiceRejectsTheSecondAttempt`
+  是这个 Phase 的核心验收场景:同一张票核销两次,第二次必须被拒绝。
+- **没有做"核销时间窗口"限制**(比如"只能在场次开始前后 N 小时内核销"):
+  这个 Phase 的范围就是"付过款、没被用过就能核销",不做基于场次时间的额外
+  限制——如果以后要加,是在 `TicketService.redeem` 里再叠一层独立校验,
+  不需要改票据编码本身的结构。
+- **没有记录"是哪个 ADMIN 核销的"**:`redeemed_at` 只记录核销时刻,不记录
+  操作者身份——审计追溯"具体是谁check-in的"目前不在范围内,是有意收窄的
+  MVP 边界,不是遗漏。
+- **前端二维码用 `qrcode.react`(`QRCodeSVG`)客户端渲染,后端只提供编码
+  内容**:后端完全不涉及图片生成,`ticketCode` 就是一段普通字符串,`GET
+  /bookings/{id}` 拿到之后前端直接传给 `<QRCodeSVG value={...} />` 现场画出
+  二维码图案。二维码固定套一层白底(不管当前是不是暗色主题)——扫码枪/相机
+  需要足够对比度,Liquid Glass 半透明的深色卡片背景本身做不到这一点。已
+  核销的票据二维码保留显示但视觉上调暗(不是隐藏),兼作"支付凭证"用途。
 
 ### Phase 8 — 管理后台/报表(Admin Dashboard & Reporting)
 - 销售报表、上座率分析(SQL聚合查询,能展示你的SQL能力)

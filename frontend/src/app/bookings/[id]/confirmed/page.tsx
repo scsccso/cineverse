@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { QRCodeSVG } from "qrcode.react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { getBooking } from "@/lib/api/bookings";
 import type { BookingResponse } from "@/lib/api/types";
@@ -154,6 +155,25 @@ export default function BookingConfirmedPage() {
               <dd className="font-mono text-primary">RM {booking.totalPrice.toFixed(2)}</dd>
             </div>
           </dl>
+
+          {booking.ticketCode && (
+            <div className="mt-6 flex flex-col items-center border-t border-glass-border/60 pt-6">
+              {booking.redeemedAt ? (
+                <p className="mb-3 rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-primary">
+                  已入场 · {new Date(booking.redeemedAt).toLocaleString("zh-CN")}
+                </p>
+              ) : (
+                <p className="mb-3 text-xs text-muted-foreground">入场时向工作人员出示此电子票</p>
+              )}
+              {/* White backing regardless of theme — QR scanners need strong
+                  contrast, which the dark Liquid Glass surface can't provide
+                  on its own. Dimmed (not hidden) once redeemed: still useful
+                  as a receipt, just visually de-emphasized. */}
+              <div className={`rounded-2xl bg-white p-4 ${booking.redeemedAt ? "opacity-50" : ""}`}>
+                <QRCodeSVG value={booking.ticketCode} size={180} marginSize={2} />
+              </div>
+            </div>
+          )}
 
           <Button className="mt-6 h-11 w-full" render={<Link href="/profile">查看我的账号</Link>} />
         </GlassCard>

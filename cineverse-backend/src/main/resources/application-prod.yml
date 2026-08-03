@@ -25,6 +25,8 @@ app:
     secret-key: ${STRIPE_SECRET_KEY}
     webhook-secret: ${STRIPE_WEBHOOK_SECRET}
     currency: ${STRIPE_CURRENCY:myr}
+  ticket:
+    signing-secret: ${TICKET_SIGNING_SECRET}
 
 logging:
   level:

@@ -378,3 +378,57 @@ booking 无关的测试 session,不会命中我们自己创建的 Payment 行(�
 cd cineverse-backend
 mvn test -Dtest=PaymentFlowIntegrationTest
 ```
+
+## Order / 电子票(Phase 7)
+
+`POST /api/v1/tickets/redeem` 仅 ADMIN,不需要额外密钥/第三方账号——票据
+编码是本地签名的 JWT(和 access/refresh token 同一套 jjwt 机制),`app.ticket
+.signing-secret` 本地开发有 dev-only 默认值,不像 Stripe key 那样需要外部
+账号。
+
+### 走一遍完整流程(选座 → 支付成功 → 拿到票 → 核销)
+
+```bash
+ACCESS_TOKEN="<顾客账号登录拿到的 accessToken>"
+ADMIN_TOKEN="<用 admin@cineverse.local / Admin@12345 登录拿到的 accessToken>"
+
+# 复用前面 Payment 一节走完一次真实支付,或者本地图省事直接用管理员权限
+# 之外没有别的路径能把 booking 标记 CONFIRMED——票据编码只在 CONFIRMED 之后
+# 才会出现在响应里
+curl -s http://localhost:8081/api/v1/bookings/$BOOKING_ID \
+  -H "Authorization: Bearer $ACCESS_TOKEN" | jq '{status, ticketCode, redeemedAt}'
+```
+
+`ticketCode` 字段就是二维码里编码的原始字符串(前端拿它喂给
+`<QRCodeSVG value={ticketCode} />` 画出图案);本地没有扫码枪的话直接复制
+这段字符串模拟"扫码结果":
+
+```bash
+TICKET_CODE="<上一步拿到的 ticketCode>"
+
+curl -s -X POST http://localhost:8081/api/v1/tickets/redeem \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"ticketCode\":\"$TICKET_CODE\"}" | jq
+```
+
+返回场次/座位信息供工作人员核对入场。**再用同一个 `TICKET_CODE` 核销一次**
+应该得到 `409`(同一张票不能核销两次,这是本 Phase 的核心验收场景,自动化
+测试见 `TicketFlowIntegrationTest.redeemingATicketTwiceRejectsTheSecondAttempt`)：
+
+```bash
+curl -i -X POST http://localhost:8081/api/v1/tickets/redeem \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"ticketCode\":\"$TICKET_CODE\"}"
+```
+
+未登录或者 CUSTOMER 角色调用 `/tickets/redeem` 会得到 `401`/`403`(仅
+ADMIN)；编码本身被篡改(随便改一个字符)会得到 `400`；booking 还没支付
+成功(仍是 `PENDING`)或者已经被取消/过期,拿一个手动构造的编码去核销会
+得到 `409`。本地跑完整测试：
+
+```bash
+cd cineverse-backend
+mvn test -Dtest=TicketFlowIntegrationTest
+```
