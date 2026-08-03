@@ -22,9 +22,12 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 /**
- * No generic status setter — only the two transitions Phase 5 actually
- * performs (markExpired/markCancelled) are exposed. markConfirmed() belongs
- * to whichever Phase 6 payment-success handler first needs it.
+ * No generic status setter — only the transitions each phase actually
+ * performs are exposed (markExpired/markCancelled from Phase 5,
+ * markConfirmed from Phase 6's payment flow). expires_at itself is never
+ * extended for Stripe's sake — see CLAUDE.md Phase 6 for why the 5-minute
+ * hold is left untouched and Stripe's own Checkout Session is proactively
+ * expired instead when this booking is released.
  */
 @Entity
 @Table(name = "bookings")
@@ -76,5 +79,9 @@ public class Booking {
 
     public void markCancelled() {
         this.status = BookingStatus.CANCELLED;
+    }
+
+    public void markConfirmed() {
+        this.status = BookingStatus.CONFIRMED;
     }
 }

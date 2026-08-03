@@ -149,9 +149,16 @@ export interface BookingResponse {
   id: string;
   status: BookingStatus;
   totalPrice: number;
-  /** End of the 5-minute hold window — past this, a PENDING booking is lazily expired on next read. */
+  /** End of the hold window — past this, a PENDING booking is lazily expired on next read. Starts at 5
+   * minutes; extended to 35 once checkout begins (POST /bookings/{id}/checkout), to outlast Stripe's
+   * own 30-minute-minimum Checkout Session expiry. */
   expiresAt: string;
   createdAt: string;
   showtime: BookingShowtimeSummary;
   seats: BookingSeatResponse[];
+}
+
+/** POST /api/v1/bookings/{id}/checkout — checkoutUrl is Stripe's hosted payment page; redirect the whole page there. */
+export interface CheckoutSessionResponse {
+  checkoutUrl: string;
 }

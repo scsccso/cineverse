@@ -49,6 +49,15 @@ app:
     base-url: /uploads
     default-poster-url: /images/no-poster.svg
     default-backdrop-url: /images/no-backdrop.svg
+  frontend:
+    base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
+  stripe:
+    # No dev-only fallback here (unlike JWT secrets above) — a checkout
+    # attempt without a real test-mode key should fail loudly and locally,
+    # not silently call Stripe as an unauthenticated/garbage key.
+    secret-key: ${STRIPE_SECRET_KEY:}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+    currency: ${STRIPE_CURRENCY:myr}
 
 springdoc:
   swagger-ui:

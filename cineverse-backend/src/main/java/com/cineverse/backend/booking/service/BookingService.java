@@ -6,6 +6,7 @@ import com.cineverse.backend.booking.dto.ShowtimeSeatsResponse;
 import com.cineverse.backend.booking.entity.Booking;
 import com.cineverse.backend.booking.entity.BookingSeat;
 import com.cineverse.backend.booking.entity.BookingStatus;
+import com.cineverse.backend.booking.event.BookingReleasedEvent;
 import com.cineverse.backend.booking.exception.SeatUnavailableException;
 import com.cineverse.backend.booking.mapper.BookingMapper;
 import com.cineverse.backend.booking.repository.BookingRepository;
@@ -30,6 +31,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,6 +53,7 @@ public class BookingService {
     private final UserRepository userRepository;
     private final SeatLockService seatLockService;
     private final BookingMapper bookingMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public BookingService(
             BookingRepository bookingRepository,
@@ -59,7 +62,8 @@ public class BookingService {
             SeatRepository seatRepository,
             UserRepository userRepository,
             SeatLockService seatLockService,
-            BookingMapper bookingMapper) {
+            BookingMapper bookingMapper,
+            ApplicationEventPublisher eventPublisher) {
         this.bookingRepository = bookingRepository;
         this.bookingSeatRepository = bookingSeatRepository;
         this.showtimeRepository = showtimeRepository;
@@ -67,6 +71,7 @@ public class BookingService {
         this.userRepository = userRepository;
         this.seatLockService = seatLockService;
         this.bookingMapper = bookingMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -175,6 +180,7 @@ public class BookingService {
 
         booking.markCancelled();
         bookingRepository.saveAndFlush(booking);
+        eventPublisher.publishEvent(new BookingReleasedEvent(bookingId));
     }
 
     @Transactional
@@ -183,6 +189,49 @@ public class BookingService {
         requireAccess(userId, isAdmin, booking);
         List<BookingSeat> bookingSeats = bookingSeatRepository.findByBookingId(bookingId);
         return bookingMapper.toResponse(booking, bookingSeats);
+    }
+
+    /**
+     * Phase 6 checkout entry point: same lazy-expiry rule as every other
+     * read path, plus a strict owner check (no admin bypass — paying is
+     * inherently a per-user action, unlike view/cancel) and a PENDING-only
+     * gate, matching the CLAUDE.md Phase 6 requirement verbatim ("校验这个
+     * booking属于当前登录用户、状态是PENDING且未过期").
+     */
+    @Transactional
+    public Booking loadPendingBookingForCheckout(UUID userId, UUID bookingId) {
+        Booking booking = loadWithLazyExpiry(bookingId);
+        if (!booking.getUser().getId().equals(userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not have access to this booking");
+        }
+        if (booking.getStatus() != BookingStatus.PENDING) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "Booking is " + booking.getStatus() + ", cannot start checkout");
+        }
+        return booking;
+    }
+
+    /**
+     * Called only from PaymentService after a successful Stripe payment.
+     * Deliberately a no-op (returns false, booking untouched) if the
+     * booking isn't currently PENDING: it may have already been confirmed
+     * by a different Checkout Session for the same booking, or its hold may
+     * have lapsed before the webhook arrived. Resurrecting an
+     * EXPIRED/CANCELLED booking to CONFIRMED just because Stripe reports
+     * money moved would risk confirming a seat someone else may already
+     * hold — see CLAUDE.md Phase 6 for why this residual edge case (a
+     * captured payment that can't be safely applied) is a manual
+     * reconciliation matter, not something auto-refunded here.
+     */
+    @Transactional
+    public boolean confirmIfPending(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId).orElse(null);
+        if (booking == null || booking.getStatus() != BookingStatus.PENDING) {
+            return false;
+        }
+        booking.markConfirmed();
+        bookingRepository.saveAndFlush(booking);
+        return true;
     }
 
     private void requireAccess(UUID userId, boolean isAdmin, Booking booking) {
@@ -203,6 +252,7 @@ public class BookingService {
         if (BookingStateMachine.shouldLazilyExpire(booking.getStatus(), booking.getExpiresAt(), Instant.now())) {
             booking.markExpired();
             bookingRepository.saveAndFlush(booking);
+            eventPublisher.publishEvent(new BookingReleasedEvent(booking.getId()));
         }
         return booking;
     }
@@ -230,6 +280,7 @@ public class BookingService {
         }
         if (!newlyExpired.isEmpty()) {
             bookingRepository.saveAllAndFlush(newlyExpired);
+            newlyExpired.forEach(booking -> eventPublisher.publishEvent(new BookingReleasedEvent(booking.getId())));
         }
         if (statusByBookingId.isEmpty()) {
             return Map.of();
