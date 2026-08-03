@@ -58,6 +58,10 @@ app:
     secret-key: ${STRIPE_SECRET_KEY:}
     webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
     currency: ${STRIPE_CURRENCY:myr}
+  ticket:
+    # Dev-only fallback, same reasoning as the JWT secrets above — forging a
+    # ticket isn't a financial exposure the way a leaked Stripe key is.
+    signing-secret: ${TICKET_SIGNING_SECRET:dev-only-ticket-secret-change-me-please-32bytes-min}
 
 springdoc:
   swagger-ui:

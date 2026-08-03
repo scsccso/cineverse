@@ -149,13 +149,17 @@ export interface BookingResponse {
   id: string;
   status: BookingStatus;
   totalPrice: number;
-  /** End of the hold window — past this, a PENDING booking is lazily expired on next read. Starts at 5
-   * minutes; extended to 35 once checkout begins (POST /bookings/{id}/checkout), to outlast Stripe's
-   * own 30-minute-minimum Checkout Session expiry. */
+  /** End of the 5-minute hold window — past this, a PENDING booking is lazily expired on next read.
+   * Never extended for checkout (see CLAUDE.md Phase 6) — Stripe's own Checkout Session is proactively
+   * expired instead when this booking is released. */
   expiresAt: string;
   createdAt: string;
   showtime: BookingShowtimeSummary;
   seats: BookingSeatResponse[];
+  /** E-ticket code (a signed JWT) to render as a QR code — present only once status is CONFIRMED. */
+  ticketCode: string | null;
+  /** When this ticket was checked in via POST /api/v1/tickets/redeem — null until then. */
+  redeemedAt: string | null;
 }
 
 /** POST /api/v1/bookings/{id}/checkout — checkoutUrl is Stripe's hosted payment page; redirect the whole page there. */

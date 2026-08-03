@@ -16,7 +16,11 @@ public record BookingResponse(
         Instant expiresAt,
         Instant createdAt,
         ShowtimeSummary showtime,
-        List<BookingSeatResponse> seats) {
+        List<BookingSeatResponse> seats,
+        @Schema(description = "电子票编码(签名过的 JWT,前端渲染成 QR code)；只有 status 是 CONFIRMED 时才有值,否则为 null")
+        String ticketCode,
+        @Schema(description = "入场核销时间；null 表示尚未核销,见 POST /api/v1/tickets/redeem")
+        Instant redeemedAt) {
 
     public record ShowtimeSummary(
             UUID id,

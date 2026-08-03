@@ -66,6 +66,8 @@ public class SecurityConfig {
                         // else's) is a data-level check in BookingService,
                         // not something this route matcher can express.
                         .requestMatchers("/api/v1/bookings/**").authenticated()
+                        // Check-in/redemption — box-office staff only, never customer-facing.
+                        .requestMatchers("/api/v1/tickets/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(restAuthenticationEntryPoint)
