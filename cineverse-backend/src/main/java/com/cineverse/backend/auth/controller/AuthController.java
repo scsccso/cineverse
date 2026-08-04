@@ -112,7 +112,17 @@ public class AuthController {
         return ResponseCookie.from(REFRESH_COOKIE_NAME, value)
                 .httpOnly(true)
                 .secure(cookieSecure)
-                .sameSite("Strict")
+                // Lax, not Strict: Stripe Checkout's success/cancel redirect back to
+                // our own origin is a cross-site-initiated top-level GET navigation
+                // (the browser was on checkout.stripe.com right before). Strict
+                // cookies are withheld on exactly that request, so proxy.ts saw no
+                // refresh_token cookie on the landing request and bounced the user
+                // to /login despite a valid session. Lax still attaches on this kind
+                // of top-level navigation but — same as Strict — never on cross-site
+                // XHR/fetch or cross-site POST, and every real API call this app
+                // makes is a same-site fetch from the frontend to itself, so this
+                // doesn't weaken CSRF protection for how the cookie is actually used.
+                .sameSite("Lax")
                 .path(REFRESH_COOKIE_PATH)
                 .maxAge(maxAgeSeconds)
                 .build();

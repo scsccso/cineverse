@@ -162,13 +162,14 @@ CI 曾因为一个真实的 flaky test bug 红过一次(access token 缺 `jti`,
 关键决定:
 - **Token 存储方式**:access token 15min,纯内存(前端 React Context,不落地
   localStorage/sessionStorage,防 XSS);refresh token 7 天,**httpOnly cookie**
-  (`Path=/`,`SameSite=Strict`,`Secure` 视 profile 而定)。第 4 节的开放问题 #2
-  已按此定案。
+  (`Path=/`,`SameSite=Lax`——最初定的是 `Strict`,Phase 6 接入 Stripe Checkout
+  后发现的问题、以及为什么改成 `Lax` 见 Phase 6 补充,`Secure` 视 profile 而定)。
+  第 4 节的开放问题 #2 已按此定案。
 - **Token rotation**:每次 `/refresh` 旧 refresh token 立即标记 `revoked`,下发新
   的一对 token,不是简单延期。
 - **CORS**:后端显式配置 `allowedOrigins`(默认 `http://localhost:3000`)+
   `allowCredentials(true)`,因为 refresh cookie 要靠 `credentials:'include'` 跨
-  端口(3000 → 8081)携带。SameSite=Strict 在这里仍然生效,因为"site"按
+  端口(3000 → 8081)携带。SameSite=Lax 在这里仍然生效,因为"site"按
   scheme+eTLD+1 算,不看端口——`localhost:3000` 和 `localhost:8081` 是跨源但
   同站。
 - **前端框架**:确认用 Next.js 16(App Router + Turbopack),不是 Vue/纯HTML。
@@ -475,6 +476,29 @@ CASCADE"的错误。
   MYR);只有 `StripeCheckoutGatewayImpl` 调用 Stripe SDK 那一层做
   `amount * 100` 的换算,不让这个 Stripe API 特有的细节渗透到领域模型/
   数据库里。
+
+### Phase 6 事后修复:refresh cookie 从 `SameSite=Strict` 改成 `Lax`(2026-08-04)
+本地手动测试完整支付链路时发现:选座 → 去支付 → Stripe 托管页完成付款 →
+跳转回 `/bookings/{id}/confirmed` 之后,直接被弹回 `/login`,即使这个浏览器
+session 本来是登录状态。根因是 `Strict` 和 `frontend/src/proxy.ts` 的组合:
+Stripe 的 `success_url`/`cancel_url` 跳转回来是一次由 `checkout.stripe.com`
+发起的跨站顶级导航(浏览器地址栏刚才还停在 Stripe 的域名上),即使目标 URL
+是我们自己的站点,`SameSite=Strict` 的 cookie 在这一次"落地请求"上依然不会
+被带上——而 `proxy.ts` 恰好就是靠这个请求里有没有 `refresh_token` cookie
+来判断"要不要拦到 `/login`"(见 Phase 5"公开路由 vs 登录路由"那条原则的
+落地实现),自然就被当成"未登录"处理。
+
+修复是把 `AuthController.buildCookie` 的 `sameSite` 从 `Strict` 改成
+`Lax`——`Lax` 恰好覆盖"跨站顶级导航 + GET"这一种请求(Stripe 的跳转正是
+GET),但对跨站的 XHR/fetch、跨站 POST 仍然和 `Strict` 一样不带 cookie。
+这个项目里所有真正的鉴权 API 调用都是前端对自己站点发起的同站 `fetch`
+(`credentials: 'include'` 那一套,见 Phase 1 的 CORS 决定),从来不是"第三方
+站点发起的跨站请求",所以 `Lax` 相对 `Strict` 并没有实际放宽任何这个 cookie
+会遇到的 CSRF 面——真正需要 `Strict` 才能防住的场景(cookie 被跨站顶级导航
+带到我们自己站点、且我们自己站点会仅凭这个 cookie 出现就执行敏感操作)在这
+个项目里不存在,`proxy.ts` 本身也只是粗筛,不靠这个 cookie 的存在直接授权
+任何操作(见 `proxy.ts` 注释)。第 1 节 Phase 1 的"Token 存储方式"决定已同步
+改成 `Lax`,不是两处各说各话。
 
 ### Phase 7 — 订单/电子票(Order & E-ticket)✅ 完成于 2026-08-04
 - Booking 支付成功(`CONFIRMED`)之后即拥有一张电子票;新增
