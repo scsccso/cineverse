@@ -8,6 +8,7 @@ import com.stripe.net.RequestOptions;
 import com.stripe.param.checkout.SessionCreateParams;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Component;
  * RequestOptions rather than the SDK's global static {@code Stripe.apiKey}
  * field — avoids mutating shared static state from a Spring bean.
  */
+@Slf4j
 @Component
 public class StripeCheckoutGatewayImpl implements StripeCheckoutGateway {
 
@@ -22,6 +24,15 @@ public class StripeCheckoutGatewayImpl implements StripeCheckoutGateway {
 
     public StripeCheckoutGatewayImpl(StripeProperties properties) {
         this.properties = properties;
+        // Presence/length only — never the value itself. app.stripe.secret-key
+        // and .webhook-secret have no dev-only fallback (see StripeProperties),
+        // so an unset env var silently resolves to "" here instead of failing
+        // at startup; this line is the fastest way to tell "not loaded" apart
+        // from "loaded but rejected by Stripe" without ever printing a secret.
+        log.info(
+                "Stripe config loaded: secretKey present={} (length={}), webhookSecret present={} (length={})",
+                !properties.secretKey().isBlank(), properties.secretKey().length(),
+                !properties.webhookSecret().isBlank(), properties.webhookSecret().length());
     }
 
     @Override

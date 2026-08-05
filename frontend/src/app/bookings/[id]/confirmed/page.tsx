@@ -9,8 +9,9 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { getBooking } from "@/lib/api/bookings";
 import type { BookingResponse } from "@/lib/api/types";
 import { GlassCard } from "@/components/glass/glass-card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { formatShowDate, formatShowTime } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 const EASE_APPLE = [0.22, 1, 0.36, 1] as const;
 const POLL_INTERVAL_MS = 1500;
@@ -110,10 +111,12 @@ export default function BookingConfirmedPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             这笔订单没能在有效时间内完成支付,座位已释放。
           </p>
-          <Button
-            className="mt-6 h-11 w-full"
-            render={<Link href={`/showtimes/${booking.showtime.id}/seats`}>返回重新选座</Link>}
-          />
+          <Link
+            href={`/showtimes/${booking.showtime.id}/seats`}
+            className={cn(buttonVariants(), "mt-6 h-11 w-full")}
+          >
+            返回重新选座
+          </Link>
         </GlassCard>
       </section>
     );
@@ -175,7 +178,9 @@ export default function BookingConfirmedPage() {
             </div>
           )}
 
-          <Button className="mt-6 h-11 w-full" render={<Link href="/profile">查看我的账号</Link>} />
+          <Link href="/profile" className={cn(buttonVariants(), "mt-6 h-11 w-full")}>
+            查看我的账号
+          </Link>
         </GlassCard>
       </motion.div>
     </section>

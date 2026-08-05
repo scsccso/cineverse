@@ -14,6 +14,7 @@ import com.cineverse.backend.ticket.exception.InvalidTicketCodeException;
 import com.cineverse.backend.ticket.exception.TicketAlreadyRedeemedException;
 import java.time.Instant;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +31,7 @@ import org.springframework.web.server.ResponseStatusException;
  * stacktrace. Business modules add their own {@code @ExceptionHandler}
  * methods here as they introduce domain-specific exceptions.
  */
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -119,6 +121,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpectedException(Exception ex) {
+        // The client only ever gets the generic envelope below — this is the
+        // one place the real stacktrace is allowed to surface, since nothing
+        // upstream (DispatcherServlet's default warnLogger is unset) logs it
+        // once an exception is resolved by an @ExceptionHandler.
+        log.error("Unhandled exception", ex);
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error");
     }
 
