@@ -2,7 +2,8 @@
 
 > 本文件是本项目的唯一真相来源(single source of truth)。每次开新的 Claude Code session,先读这份文件。
 > 更新时间:2026-08(随项目迭代持续更新)
-> 当前进度:Phase 0~7 已完成(含 Phase 7 电子票 + 入场核销),Phase 8(管理后台/报表)未开始 —— 详见第 3 节。
+> 当前进度:Phase 0~8 全部完成(含 Phase 8 管理后台/报表——销售报表 + 上座率分析,
+> CSV/PDF 导出),MVP 路线图到此收尾 —— 详见第 3 节。
 > 详细的API调试步骤见 docs/DEVELOPMENT.md,数据库 schema 详情见 docs/DATABASE.md,
 > 面向招聘官的项目介绍见 README.md,本文件是面向Claude Code的项目记忆。
 
@@ -118,6 +119,40 @@
     做小的次要工具型控件(导航栏的登出按钮、次要 nav 链接),不是这条标准的
     疏漏。已跑过 `npm run build` + `npm run lint` 确认这次调整没有影响其他
     页面(所有主要 CTA 按钮本来就带显式的 `h-11`/`h-12` 覆盖,不依赖这个默认值)。
+
+### 1.5.1 Admin 后台的设计系统例外(Phase 8,2026-08-06)
+
+`/admin/**` 下的页面(目前是 `/admin/dashboard`)**不使用 Liquid Glass 暗色
+玻璃拟态**——这是继座位图的性能例外之后,第二个有意偏离"全站默认基于
+`GlassCard`"这条规则的地方,原因和座位图不同(那是密度驱动的性能例外),
+这里是内容形态驱动的可读性例外:
+
+- **为什么例外**:管理后台是数据密集型界面(图表 + 表格 + 筛选器),核心
+  诉求是信息密度和扫描效率,不是沉浸感。玻璃拟态的指针跟随高光在浏览
+  电影海报这种视觉主导的页面上是加分项,但在一屏塞满数字和柱状图的报表
+  页面上反而分散注意力;同时这类页面往往同时渲染多张卡片(筛选器卡片 +
+  两个报表卡片,以后可能更多),`GlassCard` 每张卡自带的 `pointermove`
+  监听器叠加起来,和座位图当初放弃 `GlassCard` 的性能顾虑是同一类问题。
+- **怎么做到的:一个作用域内的 CSS 自定义属性覆盖,不是新写一套组件库**。
+  `globals.css` 里新增一个 `.admin-light` 类,在其中把 `--background`、
+  `--card`、`--border`、`--muted-foreground` 等和 `:root`(浅色)完全相同
+  的值重新声明一遍,只有 `--primary`/`--primary-foreground`/`--ring`
+  保留原来的暖金色(`#F4C430`/`#1a1506`)——按钮/焦点环这类"实心色块 + 深色
+  文字"的场景不管外层是深是浅都够对比度,没有理由为了主题切换换掉品牌色。
+  `app/admin/layout.tsx` 把这个类挂在包裹 `children` 的最外层 `<div>` 上;
+  由于 `<html>` 始终带着 `.dark`(暗色主题是唯一主题,见本节开头),
+  `.admin-light` 这个 class 是 `.dark` 的**后代**,而 CSS 自定义属性的
+  继承规则是"离读取点最近的声明生效"——所以 `Card`/`Badge`/`Button`/
+  `Input` 这些已有组件在 `.admin-light` 子树内直接读到浅色的值,不需要
+  给它们各写一份 admin 专属变体,也不会影响 `.admin-light` 之外的任何页面
+  (那些页面读到的仍然是 `.dark` 上声明的暗色值)。
+- **卡片视觉规范**:细边框 + 低强度阴影(复用已有 `Card` 组件自带的
+  `ring-1 ring-foreground/10`,外加 `shadow-sm` 类名),不是 `GlassCard`
+  的模糊背景 + 跟随光标高光。
+- **无障碍标准不因为换主题而降级**:44×44 最小点击热区、状态区分不能只靠
+  颜色、`prefers-reduced-motion` 支持——这几条在 1.5 开头已经确立为全站
+  默认标准,admin 页面同样遵守,具体应用见 Phase 8 前端补充里图表/筛选器/
+  导出按钮各自的说明,这里不重复。
 
 ---
 
@@ -567,8 +602,189 @@ GET),但对跨站的 XHR/fetch、跨站 POST 仍然和 `Strict` 一样不带 coo
   需要足够对比度,Liquid Glass 半透明的深色卡片背景本身做不到这一点。已
   核销的票据二维码保留显示但视觉上调暗(不是隐藏),兼作"支付凭证"用途。
 
-### Phase 8 — 管理后台/报表(Admin Dashboard & Reporting)
-- 销售报表、上座率分析(SQL聚合查询,能展示你的SQL能力)
+### Phase 8 — 管理后台/报表(Admin Dashboard & Reporting)✅ 完成于 2026-08-06
+- 两个核心报表,全部走真正的 SQL 聚合(`GROUP BY` + `date_trunc` + `generate_series`
+  时间分桶),不是整表拉到 Java 里用 stream 算:
+  - `GET /api/v1/admin/reports/sales`:按 day/week/month 粒度统计营收,支持预设
+    时间范围(今日/近7天/近30天,前端计算)+ 自定义起止日期(后端只认 `from`/
+    `to` 两个显式日期参数,预设只是前端把它们解析成具体值再调同一个接口,
+    API 不需要为"预设"单独设计一套参数),可选按 `movieId`/`hallId` 筛选。
+  - `GET /api/v1/admin/reports/occupancy`:按场次统计已订座位数(仅 `CONFIRMED`)
+    / 总座位数,响应同时带每场次明细和 from/to 范围内的汇总,可选按
+    `movieId`/`hallId` 筛选。
+  - `GET /api/v1/admin/reports/{sales,occupancy}/export?format=csv|pdf`:CSV/
+    PDF 导出,参数与对应的查询接口一致。
+- ADMIN-only,复用项目已有的 401(未登录)/403(角色不对)语义,新增
+  `/api/v1/admin/**` 路由匹配(`SecurityConfig`),不重新发明。
+- 新增 `V13__report_indexes.sql`(见下面索引一节)。
+
+关键决定:
+
+- **营收口径:只统计 `CONFIRMED` booking 对应的 `SUCCEEDED` payment 金额;
+  `ORPHANED_SUCCESS` 状态的支付不计入营收,但作为单独的
+  `pendingReconciliationAmount` 字段返回,不静默丢弃**。这两个状态在 Phase 6
+  就已经定义好语义(`ORPHANED_SUCCESS` = Stripe 报告支付成功但当时 booking
+  已经不是 `PENDING`,钱真的收到了但不能安全地确认给这个 booking——见
+  CLAUDE.md Phase 6),报表层只是忠实地把这个已有的区分暴露出来,不是这个
+  Phase 新发明的规则。之所以不干脆把 `ORPHANED_SUCCESS` 也算进营收(它确实
+  是收到的钱):这笔钱可能对应的是一个已经被别人订走的座位,把它算进"销售
+  报表"会让管理员误以为这是一笔正常成交的订单,而它需要人工核对去向
+  (退款还是补发)。反过来也不能直接丢弃不展示,那样这笔钱就彻底消失于
+  报表体系之外——所以选择"不计入总营收,但单独展示"这个中间态。
+- **营收按 `payments.updated_at`(支付真正转为 `SUCCEEDED` 的时刻)分桶,不是
+  `payments.created_at`(Checkout Session 创建、也就是用户开始付款的时刻)**。
+  `Payment` 实体的 `updated_at` 由 `@UpdateTimestamp` 在每次 `save` 时自动
+  刷新,而 `markSucceeded()` 是这一行记录从 `PENDING` 到终态唯一会再次触发
+  保存的地方,所以对一条 `SUCCEEDED` 记录而言 `updated_at` 就精确等于"支付
+  成功"的那一刻;`created_at` 反而代表的是结账流程*开始*的时刻,用它分桶会
+  把"今天下单、但可能拖到明天才在 Stripe 页面完成付款"的一笔钱记到下单那天,
+  与"营收=实际入账时间"的直觉不符。这个区别在小额、当场完成支付的场景下
+  通常不会跨天,但语义上 `updated_at` 才是对的锚点,所以从一开始就选它,
+  没有依赖"反正很少跨天"这种侥幸。
+- **报表的时间分桶/范围转换复用与前端相同的固定时区
+  `Asia/Kuala_Lumpur`**(`ReportService.CINEMA_ZONE`,和
+  `frontend/src/lib/format.ts` 的 `CINEMA_TIME_ZONE` 是同一个值,分别在两处
+  硬编码,原因同 `format.ts` 的注释——MVP 只有一家分店,统一到它所在地的
+  当地时间)。请求的 `from`/`to` 是这个时区下的日历日期,`ReportDateRange`
+  把它转换成半开区间的 `Instant`(`[from 当地 00:00, to+1天 当地 00:00)`)
+  再传给 SQL 层——这个转换单独拆成一个不依赖 Spring/DB 的纯静态工厂方法,
+  专门为了能在没有 Testcontainers 的前提下写单元测试锁定这个最容易出
+  off-by-one 错误的地方(`ReportDateRangeTest`)。
+- **聚合查询用手写原生 SQL(`NamedParameterJdbcTemplate`),不是 JPA/Hibernate
+  实体查询**——这是本 Phase 唯一引入 `spring-jdbc` 直接查询方式的模块,
+  `spring-boot-starter-data-jpa` 本身就传递依赖了 `spring-jdbc`,且
+  `NamedParameterJdbcTemplate` 由 Spring Boot 根据已有的 `DataSource`
+  自动配置好,不需要新增依赖。选它是因为这个 Phase 的价值主张就是展示真正
+  的 SQL 聚合能力(`GROUP BY`、`date_trunc`、`generate_series`、相关子查询),
+  用 JPA 把整表实体拉进 Java 再用 stream 求和,既绕开了这个价值点,性能上
+  也是明显的倒退。
+- **销售报表的时间桶用 `generate_series` 补零,不是只返回有数据的桶**:
+  `ReportRepository.salesBuckets` 用一个 CTE 先生成 `[from, to)` 范围内每个
+  粒度(日/周/月)的完整桶序列,再 `LEFT JOIN` 实际的营收聚合结果,
+  `COALESCE` 缺失值为 0——这样前端拿到的永远是一条连续的时间序列,不需要
+  自己判断"哪天没数据要不要补一个 0 点",图表也不会因为稀疏数据出现断裂的
+  柱子。`generate_series` 的步长用 `('1 ' || :granularity)::interval` 拼出
+  (如 `'1 day'`/`'1 week'`/`'1 month'`),`:granularity` 本身是绑定参数
+  (值域被 `ReportGranularity` 枚举收窄到 `day`/`week`/`month` 三个值,虽然
+  参数化绑定本身已经排除了 SQL 注入风险,但输入侧仍然只信任枚举,不接受
+  任意字符串拼接)。
+- **上座率只统计 `CONFIRMED` 状态 booking 占用的座位,`PENDING`(5 分钟持有窗口
+  内的临时锁定)不计入**——和营收口径"只算 `CONFIRMED`"是同一条原则的另一个
+  应用,避免上座率数字随着用户"选座中但还没付款"的瞬时状态抖动,只反映
+  真实卖出的座位。
+- **可选的"按电影/影厅细分"实现成过滤器(narrow to 指定 movieId/hallId),不是
+  一个额外的分组维度**:两个报表的响应形状都保持"一份扁平的时间桶列表"或
+  "一份扁平的场次列表",`movieId`/`hallId` 参数只是收窄这份列表的范围,不会
+  展开成"电影 × 时间"或"影厅 × 时间"的交叉表——避免为一个没有被要求做成
+  表格聚合视图的需求引入组合爆炸的响应结构。真需要交叉分析时,前端可以对
+  同一个接口用不同的 `movieId`/`hallId` 分别请求几次,不需要后端预先算好
+  所有组合。
+- **CSV/PDF 导出复用同一份 `TabularReport`(title + headers + rows)中间结构,
+  两个报表 × 两种格式没有写四份互相独立的导出逻辑**:`ReportExportService`
+  是唯一同时认识"报表 DTO 长什么样"和"表格长什么样"的地方,负责把
+  `SalesReportResponse`/`OccupancyReportResponse` 转换成 `TabularReport`;
+  `CsvWriter`/`PdfTableWriter` 只认 `TabularReport`,不知道销售报表和上座率
+  报表的存在。CSV 手写了一个最小的 RFC 4180 实现(没有引入 opencsv 这种量级
+  的依赖去做几行转义逻辑),额外带了 UTF-8 BOM 前缀方便 Excel 正确识别编码
+  (电影标题可能包含非 ASCII 字符,不加 BOM 会被 Excel 当 Latin-1 读乱码)。
+  PDF 用 **OpenPDF**(LGPL/MPL 协议的 iText 4 分支)而不是 iText 本身——iText
+  当前主线版本是 AGPL/商业双授权,对一个希望能被自由 clone、构建的作品集
+  项目来说协议不合适,OpenPDF 是这条代码线里协议干净的延续。
+- **索引:只新增了一个 `payments (status, updated_at)` 复合索引
+  (`V13__report_indexes.sql`)**,评估后没有再加别的——销售报表的 SQL 同时
+  按 `status` 过滤、按 `updated_at` 做范围扫描/分桶,这两个查询模式合在一起
+  才需要一个新索引;上座率报表用到的 `showtimes.start_time`/`hall_id`/
+  `movie_id` 索引已经在 Phase 4(`V7`)建好,`bookings (showtime_id, status)`
+  复合索引也已经在 Phase 5(`V9`)建好,足够覆盖这个 Phase 新增查询的过滤
+  需求,不需要重复造一遍。加索引不是"每个 Phase 例行公事都要加",这里是
+  确认了缺口之后才加,不是凑数。
+- **测试:核心验收是 Testcontainers 集成测试对已知 fixture 断言精确的聚合
+  数字,不是只断言 200**(`ReportFlowIntegrationTest`)。由于 Postgres 容器
+  在同一个测试类的所有 `@Test` 方法之间是共享的(JUnit 默认的按类生命周期),
+  每个测试方法都创建自己独有的电影(标题里带随机 UUID)、场次、订单,
+  并且请求报表接口时**始终带上这个测试专属的 `movieId` 过滤**——这样几个
+  测试方法即使在同一个共享数据库里跑,断言的聚合数字也不会被彼此的 fixture
+  污染,不依赖测试执行顺序或者数据库重置,和 `TicketFlowIntegrationTest`
+  用随机标题隔离测试数据是同一个思路。聚合计算本身最容易出 off-by-one 的
+  两处——日期范围转换(`ReportDateRange`)、booked/total 占比计算
+  (`OccupancyMath`)——额外拆成不依赖 Testcontainers 的纯单元测试覆盖边界值。
+
+### Phase 8 前端补充:管理后台 `/admin/dashboard`(前端已完成,2026-08-06)
+
+- **`proxy.ts` 对 `/admin/:path*` 只做和 `/profile`、`/bookings` 一样的粗粒度
+  网关(refresh_token cookie 存不存在),不能也没有尝试在这一层判断
+  ADMIN 角色**:refresh token 的 JWT payload 里没有 `role` claim(只有 access
+  token 才带,见 `JwtService.generateAccessToken` vs `generateRefreshToken`),
+  而 access token 只存在浏览器内存里,Proxy 运行在服务端、请求真正到达
+  客户端 React 代码之前,根本拿不到它。**真正的 ADMIN 角色校验在
+  `app/admin/layout.tsx`,是这个 Phase 唯一新增的、真正决定"渲不渲染"的
+  防线**:mount 时调用 `fetchCurrentUser()`,`status==="unauthenticated"`
+  跳 `/login?from=/admin/dashboard`,拿到用户后 `role !== "ADMIN"` 跳回
+  `/`——在这两种情况解决之前,`children` 完全不渲染(不是渲染完再补一个
+  跳转,不会有一帧的"泄漏")。这个"Proxy 只做粗筛、真正判断在客户端
+  definitive check"的分层,和 `/profile` 页面已有的模式完全一致,不是
+  这个 Phase 独创的新模式。手动验证过:未登录直接访问
+  `/admin/dashboard` 会被 Proxy 弹到登录页;登录了但角色是 `CUSTOMER`
+  直接改地址栏输入 `/admin/dashboard` 会被 `AdminLayout` 弹回首页
+  (不是"入口对非 ADMIN 隐藏"这种伪保护,输入 URL 直达同样拦得住)。
+- **admin 侧不复用 GlassCard/暗色玻璃拟态,这是继座位图之后第二个有意的
+  设计系统例外**——完整决定和理由见 1.5 节新增的对应小节,这里不重复。
+- **图表库用 recharts**,两个图表都是单一数据系列(销售报表按时间的营收、
+  上座率报表按场次的占比),按 dataviz 方法论的表单选型规则,单一系列
+  用一个固定色相就够,不需要一整套多色分类色板,也不需要图例框(卡片
+  标题已经说明画的是什么)——`bookingCount`(订单数)这类辅助数据放进
+  tooltip 里一起展示,不做成第二根 Y 轴(项目里从不做双轴图表)。柱状图
+  的填充色是新定义的 `--chart-amber`(`#B8860B`),**不是**直接复用按钮/
+  强调色用的 `--primary`(`#F4C430`)——用 dataviz 方法论自带的
+  `validate_palette.js` 校验过:`#F4C430` 在 admin 的白色卡片背景上作为
+  图表描边/填充色的对比度只有 ~1.6:1(远低于图形元素要求的 3:1),因为它
+  的设计亮度本来就是为"金色文字/图标在深色背景上"这个场景校准的,不是为
+  "作为色块画在白底上"校准的;`#B8860B` 是同色相下压暗到亮度能过检的版本,
+  两个变量在 `.admin-light` 里分别定义、分别使用,不是同一个值的两个名字。
+  完整校验命令和结论记在 `globals.css` 里 `--chart-amber` 定义处的注释。
+- **图表的 `Bar` 显式关掉了 recharts 默认的入场动画(`isAnimationActive=
+  {false}`)**——起初没关,手动用 Playwright 截图验证时发现一个真实的
+  健壮性问题:`ResponsiveContainer` 基于 `ResizeObserver` 感知容器尺寸,
+  容器尺寸变化(哪怕只是被截图工具触发的一次全页面重排)会让 recharts 把
+  柱状图的入场动画从头重放一次(高度从 0 开始重新长出来),如果恰好在这个
+  重放窗口内取一次快照/首屏渲染,看到的会是空的图表区域——这不是"截图
+  工具的假象",是同一套机制在用户真实缩放浏览器窗口、或者字体加载导致
+  布局抖动时同样会触发的问题。关掉动画之后柱子直接以最终高度渲染,不存在
+  这个从 0 开始的中间态,顺带也满足了"支持 `prefers-reduced-motion`"这条
+  全站默认标准——数据密集的管理后台本来就不需要图表柱子"长出来"这种
+  装饰性动效。
+- **筛选器:预设时间范围(今日/近7天/近30天)+ 自定义起止日期,切换时用
+  骨架屏过渡,不是保留上一次渲染结果 + 半透明**。这里有意偏离了 dataviz
+  方法论里"重新拉取数据时保持上一帧、不用骨架屏"的一般建议——具体到这个
+  场景,"上一帧"对应的是*旧筛选条件*下的数字,如果筛选器已经显示"近30天"
+  但图表还画着"近7天"的旧数据,读者看到的标签和数字对不上,比空白骨架屏
+  更容易造成误判。是否要骨架屏由 `sales.from/to/granularity` 是否等于当前
+  筛选器的值直接推导(`salesLoading`/`occupancyLoading`,组件里没有一个单独
+  维护的 `loading` boolean),这样"正在加载"这个状态不可能和实际筛选条件
+  脱节。之所以不用一个手动 `setLoading(true)` 标志位:React 19 的
+  `react-hooks/set-state-in-effect` lint 规则不允许在 `useEffect` 里同步
+  调用 setState(那样会触发一次多余的级联渲染),只允许在 `.then()`/
+  `.catch()` 回调(也就是真正异步完成之后)里调用——这个约束反而引导出了
+  一个更不容易出 bug 的方案:与其手动维护一个可能和数据脱节的 loading 标志,
+  不如直接从"手上的数据是不是对应当前筛选条件"这个已有信息推导出来。
+- **无障碍标准继续沿用全站默认,不因为脱离 Liquid Glass 暗色主题就放松**:
+  预设时间范围按钮除了填充色变化,同时用 `aria-pressed` + 一个勾选图标
+  标出当前选中项(不是只变个颜色);两个图表各自配一个 `<details>`
+  折叠的数据表格(dataviz 方法论"图表之外始终存在一份可读表格"的要求),
+  表格本身没有任何数字是图表之外读不到的;导出按钮的加载态图标同时带
+  `motion-reduce:animate-none`;自定义日期选择器的 `<input type="date">`
+  和筛选器按钮都显式给了 `h-11`(44px)高度,不依赖会被 `Input` 组件默认
+  `h-8` 尺寸覆盖掉的隐式高度。
+- **没有在筛选器里暴露 `movieId`/`hallId` 下拉框**——后端两个报表接口都
+  支持这两个过滤参数(见上面的关键决定),但前端这次交付的筛选器只做了
+  任务要求的"预设时间范围按钮 + 自定义起止日期",电影/影厅细分是后端能力
+  的一部分,不是这次前端 UI 的范围,以后要加也只是多两个 `<select>`,不需要
+  改接口形状。
+
+### Phase 8 交付涉及的四份文档同步
+和以往每个 Phase 一样,交付前同步更新了 CLAUDE.md(本节)、README.md("当前
+状态"一行)、`docs/DEVELOPMENT.md`(报表/导出接口的 curl 示例)、
+`docs/DATABASE.md`(`V13` 迁移 + 索引记录),不是只在 CLAUDE.md 里写"做完了"。
 
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分

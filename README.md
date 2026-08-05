@@ -9,12 +9,13 @@ CineVerse 是一个电影院在线选座订票系统:用户可以浏览正在上
 - **Liquid Glass 视觉设计语言**——参照 Apple 最新的 Liquid Glass 设计语言,高光跟随指针动态移动的玻璃拟态卡片,配合流畅的页面转场与微交互动效,高交互性的现代化界面。
 - **JWT 认证 + 角色权限管理**——Customer / Admin 两种角色;access token 只存在前端内存中、refresh token 走 httpOnly cookie,兼顾安全性与使用体验。
 - **电子票 + 入场核销**——支付成功后即拥有一张电子票(签名过的二维码,不是能被猜测/伪造的自增编号),现场扫码/输入编码即可核验入场;同一张票被重复核销会被拒绝,避免一票多用。
+- **管理后台报表**——销售报表(按日/周/月粒度统计营收,Postgres `GROUP BY` + `date_trunc` + `generate_series` 真实聚合,不是拉全表到内存里算)与上座率分析,支持 CSV/PDF 导出;营收口径明确区分"已确认收入"与"待人工核对金额",不静默丢弃异常支付。
 
 ## 作为作品集(Portfolio)项目
 
 CineVerse 同时是一个全栈工程能力的作品集项目:架构设计、高并发下的数据一致性处理、安全性、测试(Testcontainers 真实数据库/缓存集成测试)与 CI/CD 等工程实践贯穿整个项目,而不只是 CRUD 堆砌。
 
-**当前状态:Phase 0~7 已完成。** User Management(注册/登录/刷新/登出)、Movie Management(电影 CRUD + 海报上传)、Cinema & Hall Management(分店/影厅/座位自动布局)、Showtime Scheduling(场次排期)、Seat Booking(选座锁座 + 订单)、Payment(Stripe Checkout + webhook 幂等确认)、Order & E-ticket(电子票 + 入场核销)。
+**当前状态:Phase 0~8 全部完成,MVP 路线图收尾。** User Management(注册/登录/刷新/登出)、Movie Management(电影 CRUD + 海报上传)、Cinema & Hall Management(分店/影厅/座位自动布局)、Showtime Scheduling(场次排期)、Seat Booking(选座锁座 + 订单)、Payment(Stripe Checkout + webhook 幂等确认)、Order & E-ticket(电子票 + 入场核销)、Admin Dashboard & Reporting(销售报表 + 上座率分析,CSV/PDF 导出)。
 
 ## 技术栈
 
@@ -25,6 +26,7 @@ CineVerse 同时是一个全栈工程能力的作品集项目:架构设计、高
 - Spring Data JPA + Hibernate + MapStruct
 - JWT(jjwt),BCrypt 密码加密;电子票编码(Phase 7)复用同一套 jjwt 签名机制
 - Stripe Checkout(测试模式,Phase 6 支付;webhook 签名验证 + 幂等确认)
+- OpenPDF(LGPL/MPL,Phase 8 报表 PDF 导出)
 - springdoc-openapi(Swagger UI)
 - JUnit 5 + Mockito + Testcontainers(真实 Postgres 集成测试)
 - Maven
@@ -36,6 +38,7 @@ CineVerse 同时是一个全栈工程能力的作品集项目:架构设计、高
 - framer-motion(页面转场 / 微交互动效)
 - react-hook-form + zod(表单与校验)
 - qrcode.react(电子票二维码,客户端渲染,Phase 7)
+- recharts(管理后台报表图表,Phase 8)
 
 ## 项目结构
 

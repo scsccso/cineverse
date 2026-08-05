@@ -166,3 +166,53 @@ export interface BookingResponse {
 export interface CheckoutSessionResponse {
   checkoutUrl: string;
 }
+
+// ---- Admin reports (Phase 8) ----
+
+export type ReportGranularity = "DAY" | "WEEK" | "MONTH";
+
+export interface SalesBucket {
+  /** Local (cinema-timezone) calendar date the bucket starts on — YYYY-MM-DD. Always present for every bucket in range, even when revenue is zero (backend gap-fills). */
+  periodStart: string;
+  revenue: number;
+  bookingCount: number;
+}
+
+/** GET /api/v1/admin/reports/sales — ADMIN only. Only CONFIRMED bookings' SUCCEEDED payments count toward revenue; see pendingReconciliationAmount. */
+export interface SalesReportResponse {
+  from: string;
+  to: string;
+  granularity: ReportGranularity;
+  movieId: string | null;
+  hallId: string | null;
+  currency: string;
+  buckets: SalesBucket[];
+  totalRevenue: number;
+  /** ORPHANED_SUCCESS payments in range — money Stripe captured but not applied to any booking (seat may have been re-sold before the webhook arrived). Not included in totalRevenue; surfaced for manual reconciliation, not silently dropped. */
+  pendingReconciliationAmount: number;
+}
+
+export interface ShowtimeOccupancy {
+  showtimeId: string;
+  movieTitle: string;
+  hallId: string;
+  hallName: string;
+  startTime: string;
+  totalSeats: number;
+  /** Seats belonging to CONFIRMED bookings only — a PENDING hold doesn't count as occupied. */
+  bookedSeats: number;
+  /** 0..1 */
+  occupancyRate: number;
+}
+
+/** GET /api/v1/admin/reports/occupancy — ADMIN only. */
+export interface OccupancyReportResponse {
+  from: string;
+  to: string;
+  hallId: string | null;
+  movieId: string | null;
+  showtimes: ShowtimeOccupancy[];
+  totalSeats: number;
+  totalBookedSeats: number;
+  overallOccupancyRate: number;
+}

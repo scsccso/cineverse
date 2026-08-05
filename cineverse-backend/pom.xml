@@ -26,6 +26,7 @@
         <jjwt.version>0.13.0</jjwt.version>
         <archunit.version>1.4.2</archunit.version>
         <stripe.version>29.2.0</stripe.version>
+        <openpdf.version>2.0.3</openpdf.version>
     </properties>
 
     <dependencies>
@@ -79,6 +80,16 @@
             <groupId>com.stripe</groupId>
             <artifactId>stripe-java</artifactId>
             <version>${stripe.version}</version>
+        </dependency>
+
+        <!-- PDF report export (Phase 8). LGPL/MPL-licensed fork of the old
+             iText 4 code line — deliberately not iText itself, whose current
+             major versions are AGPL/commercial and wrong for a project
+             meant to be freely cloneable. -->
+        <dependency>
+            <groupId>com.github.librepdf</groupId>
+            <artifactId>openpdf</artifactId>
+            <version>${openpdf.version}</version>
         </dependency>
 
         <!-- Validation -->
