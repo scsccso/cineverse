@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
 import { ApiError } from "@/lib/api/client";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AdminHeader } from "@/components/admin/admin-header";
 
 /**
  * The definitive ADMIN-role gate — proxy.ts only rules out "no session at
@@ -16,9 +17,15 @@ import { Skeleton } from "@/components/ui/skeleton";
  * "authStatus loading -> wait; unauthenticated -> redirect; else verify"
  * shape, generalized into a layout since every /admin page needs the same
  * check, not just one.
+ *
+ * This is also the only place the customer route group's chrome
+ * (app/(customer)/layout.tsx: dark Navbar + PageTransition) and this one
+ * could collide — they don't, because route groups are siblings under
+ * app/, not nested. AdminHeader below is a separate component, not the
+ * customer Navbar branching on pathname (see CLAUDE.md 1.5.1).
  */
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { status: authStatus, fetchCurrentUser } = useAuth();
+  const { status: authStatus, fetchCurrentUser, user } = useAuth();
   const router = useRouter();
   const [authorized, setAuthorized] = useState(false);
 
@@ -33,9 +40,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     let ignore = false;
 
     fetchCurrentUser()
-      .then((user) => {
+      .then((fetchedUser) => {
         if (ignore) return;
-        if (user.role !== "ADMIN") {
+        if (fetchedUser.role !== "ADMIN") {
           // Not a hidden-link pseudo-guard — this runs even if someone
           // types the URL directly, and nothing protected has rendered yet.
           router.replace("/");
@@ -59,8 +66,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   if (!authorized) {
     return (
-      <div className="admin-light min-h-screen bg-background px-6 py-10 text-foreground">
-        <div className="mx-auto max-w-6xl space-y-4">
+      <div className="admin-light min-h-screen bg-background text-foreground">
+        <AdminHeader user={null} />
+        <div className="mx-auto max-w-6xl space-y-4 px-6 py-10">
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-64 w-full rounded-xl" />
         </div>
@@ -68,5 +76,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     );
   }
 
-  return <div className="admin-light min-h-screen bg-background text-foreground">{children}</div>;
+  return (
+    <div className="admin-light min-h-screen bg-background text-foreground">
+      <AdminHeader user={user} />
+      {children}
+    </div>
+  );
 }

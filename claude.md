@@ -154,6 +154,63 @@
   默认标准,admin 页面同样遵守,具体应用见 Phase 8 前端补充里图表/筛选器/
   导出按钮各自的说明,这里不重复。
 
+### 1.5.2 Admin 拥有完全独立的导航 shell,不复用顾客端 Navbar(2026-08-06)
+
+Phase 8 交付时 `.admin-light` 只解决了**内容区**的主题反转(见 1.5.1),但顶部
+导航栏当时仍然是全局挂在 `app/layout.tsx` 里的顾客端 `Navbar`(暗色 Liquid
+Glass)——`/admin/dashboard` 实际渲染出来是"暗色导航栏 + 浅色内容区"硬拼在一
+起,接缝很明显。这一条记录把导航栏也纳入 admin 的例外范围,是 1.5.1 那次
+重构里遗漏、这次单独补上的部分,不是重新做一次决定。
+
+- **为什么不能像 1.5.1 那样"在同一个 Navbar 组件里加 if 分支判断路由"**:
+  两种设计语言(暗色玻璃拟态 vs admin 的浅色实底)共享一个组件意味着以后每次
+  改 Navbar(配色、动效、布局)都要连带检查有没有波及从未设计给它跑的 admin
+  分支,而且组件内部会同时堆两套互不相干的 JSX/样式,可读性和可维护性都会
+  变差。拆成两个完全独立的组件(顾客端 `Navbar` 不变,新增
+  `components/admin/admin-header.tsx`)让改动天然隔离——改 admin 头部不可能
+  影响顾客端,反之亦然。
+- **怎么做到 DOM 里完全不出现顾客端 Navbar,而不是靠 CSS 隐藏**:把顾客端的
+  所有路由(首页、登录/注册、电影详情、选座、订单确认、个人中心)从
+  `app/` 直接挪进一个新的路由组 `app/(customer)/`,顾客端专属的"chrome"
+  (`Navbar` + `PageTransition` 路由转场)也从根 `app/layout.tsx` 下移一层,
+  变成 `app/(customer)/layout.tsx` 里的内容;根 `layout.tsx` 收窄到只保留
+  `<html>`/`<body>`/字体/`AuthProvider`(两边都需要的东西)。`app/admin/**`
+  是 `app/` 下的另一个独立分支,和 `(customer)` 路由组是**兄弟关系,不是父子
+  嵌套**——Next.js 按文件系统渲染组件树,兄弟分支不会互相出现在对方的渲染
+  结果里,所以访问 `/admin/dashboard` 时 `(customer)/layout.tsx`(以及它里面
+  的 `Navbar`)根本不在这次渲染路径上,不是"渲染了再被样式盖住"。路由组的
+  括号命名不进入 URL,顾客端所有路径(`/`、`/login`、`/movies/:id` 等)不受
+  影响。副作用:根 `app/loading.tsx`(首页的深色 `GlassSkeleton` 骨架屏,
+  形状是 Hero 大图+海报网格)原来因为挂在根层级,理论上也会被 Next.js 当成
+  `/admin/dashboard` 首次导航时的 Suspense fallback(内容和主题都对不上,
+  是同一类"接缝"问题的另一种表现)——随着它一并挪进 `(customer)/loading.tsx`,
+  这个理论上的错位 fallback 也顺带清掉了,不需要再额外为 admin 补一个骨架屏。
+- **`AdminHeader`(`components/admin/admin-header.tsx`)的内容**:logo/wordmark
+  (跳回 `/admin/dashboard`)、"返回前台"链接(跳回 `/`,离开 admin 语境)、
+  当前用户名(`useAuth().user`,复用 `AuthProvider` 已有的会话状态,不重新
+  发一次请求)、退出登录。退出登录按钮直接复用已有的 `LogoutButton` 组件
+  (`components/auth/logout-button.tsx`)——它是一个通用的鉴权工具组件(读
+  `useAuth().logout()`,自身不含 Navbar 或任何暗色主题相关样式,颜色/尺寸
+  全部走 CSS 变量),在 `.admin-light` 子树内和顾客端 Navbar 里视觉表现自动
+  各自正确,这不是"偷懒共享 Navbar 逻辑",和 `Button`/`Card` 这些跨两套主题
+  复用的基础组件是同一类东西。
+- **admin 唯一的入口仍然放在顾客端 Navbar 里**:一条不起眼的"管理后台"文字
+  链接(`components/layout/navbar.tsx`,只在 `user?.role === "ADMIN"` 时渲染),
+  这是 Phase 8 就有的设计,这次没有改动——顾客端 Navbar 负责"进入 admin 语境
+  的入口",`AdminHeader` 负责"admin 语境内部的导航",两者分工明确,不重叠。
+- **没有做成侧边栏**:目前 admin 只有一个 dashboard 页面,Backlog 里也没有排
+  期更多 admin 子模块,侧边栏式的多级导航在这个阶段是过度设计——真的以后要
+  加多个 admin 页面,`AdminHeader` 这一条顶部导航够用,不需要现在就为假设的
+  未来铺一套导航框架。
+- **无障碍复核结果:没有引入新的回归**。`AdminHeader` 里的"返回前台"链接
+  显式给了 `h-11`(44px);复用的 `LogoutButton`(`size="sm"`,28px 高)和
+  logo/wordmark 链接(28px 高,纯文字/图标 logo,不含点击态色块)维持的是
+  1.5 节开头已经确立的既有例外(登出按钮、次要 nav 链接、logo 本身不强制
+  44px),不是这次新引入的疏漏;拆分组件没有触碰筛选器预设按钮
+  (`DateRangeFilter`)、图表、导出按钮的任何代码,原有的 `aria-pressed`、
+  图标双重编码、`isAnimationActive={false}` 均原样保留,用 Playwright 实测
+  确认预设按钮仍是 44×44、图表数量和交互未受影响。
+
 ---
 
 ## 2. 架构原则
