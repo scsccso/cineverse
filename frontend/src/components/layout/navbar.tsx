@@ -73,6 +73,14 @@ export function Navbar() {
 
           {status === "authenticated" && (
             <>
+              {user?.role === "ADMIN" && (
+                <Link
+                  href="/admin/dashboard"
+                  className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline"
+                >
+                  管理后台
+                </Link>
+              )}
               <Link
                 href="/profile"
                 className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline"

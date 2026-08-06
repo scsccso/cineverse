@@ -8,7 +8,7 @@
 > 每张表标注了"引入于"哪个 Phase——对照 `CLAUDE.md` 第 3 节的 Phase
 > 记录,能查到"当时为什么这么设计"的完整背景和权衡过程,本文件本身只
 > 整理"现状是什么",不重复那些设计推理。
-> 当前覆盖:V1 ~ V12(Phase 1~7)。
+> 当前覆盖:V1 ~ V13(Phase 1~8)。
 
 ---
 
@@ -28,6 +28,7 @@
 | `V10__payments.sql` | `payments` | Phase 6 |
 | `V11__payments_orphaned_success_status.sql` | 修正 `payments.status` 的 CHECK 约束,新增 `ORPHANED_SUCCESS` | Phase 6(事后补丁) |
 | `V12__bookings_redeemed_at.sql` | `bookings` 新增 `redeemed_at` 字段(入场核销) | Phase 7 |
+| `V13__report_indexes.sql` | 新增 `idx_payments_status_updated_at`(`payments.status, updated_at` 复合索引),支撑管理后台报表的过滤 + 范围扫描 | Phase 8 |
 
 ---
 
@@ -297,9 +298,13 @@ subject)不落库,是 booking id + 服务端签名密钥的确定性函数,需�
 
 主键:`id`。索引:`idx_payments_booking_id`(**不是唯一索引**——一笔 booking
 可以对应多行 `payments`:放弃/过期的 Checkout 尝试之后重试会新建一行,不是
-更新旧行,历史尝试全部保留)。`ORPHANED_SUCCESS` 表示 Stripe 报告支付成功,
+更新旧行,历史尝试全部保留)、`idx_payments_status_updated_at`(`status,
+updated_at` 复合,Phase 8 由 `V13` 新增,支撑管理后台报表按状态过滤 + 按
+`updated_at` 范围扫描/分桶——为什么是 `updated_at` 不是 `created_at`,见
+CLAUDE.md Phase 8)。`ORPHANED_SUCCESS` 表示 Stripe 报告支付成功,
 但当时 booking 已经不是 `PENDING`(座位可能已经易主)——钱确实收到但不会
-自动改回 `CONFIRMED`、也不自动退款,是留痕待人工对账的状态,不是错误状态。
+自动改回 `CONFIRMED`、也不自动退款,是留痕待人工对账的状态,不是错误状态;
+Phase 8 的销售报表把它单独统计成"待对账金额",不计入营收总额。
 
 ---
 

@@ -6,6 +6,7 @@ import com.cineverse.backend.auth.exception.InvalidRefreshTokenException;
 import com.cineverse.backend.booking.exception.SeatUnavailableException;
 import com.cineverse.backend.movie.exception.MovieHasScheduledShowtimesException;
 import com.cineverse.backend.payment.exception.InvalidStripeSignatureException;
+import com.cineverse.backend.report.exception.InvalidReportRangeException;
 import com.cineverse.backend.showtime.exception.ShowtimeConflictException;
 import com.cineverse.backend.showtime.exception.ShowtimeHasBookingsException;
 import com.cineverse.backend.storage.exception.InvalidFileException;
@@ -106,6 +107,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(TicketAlreadyRedeemedException.class)
     public ResponseEntity<ErrorResponse> handleTicketAlreadyRedeemed(TicketAlreadyRedeemedException ex) {
         return build(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidReportRangeException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidReportRange(InvalidReportRangeException ex) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
     @ExceptionHandler(ResponseStatusException.class)

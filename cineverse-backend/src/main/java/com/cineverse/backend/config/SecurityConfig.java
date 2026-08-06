@@ -68,6 +68,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/bookings/**").authenticated()
                         // Check-in/redemption — box-office staff only, never customer-facing.
                         .requestMatchers("/api/v1/tickets/**").hasRole("ADMIN")
+                        // Sales/occupancy reports (Phase 8) — box-office/management only.
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(restAuthenticationEntryPoint)

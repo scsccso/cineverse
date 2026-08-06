@@ -432,3 +432,80 @@ ADMIN)；编码本身被篡改(随便改一个字符)会得到 `400`；booking �
 cd cineverse-backend
 mvn test -Dtest=TicketFlowIntegrationTest
 ```
+
+## Admin Reports / 管理后台报表(Phase 8)
+
+`/api/v1/admin/reports/**` 全部仅 `ADMIN`,`from`/`to` 是必填的 ISO 日期
+(`YYYY-MM-DD`,cinema 所在时区 `Asia/Kuala_Lumpur` 的日历日期,含
+起止两端);预设时间范围(今日/近7天/近30天)是前端把它们换算成具体
+`from`/`to` 再调这同一个接口,后端不单独接受"预设"这种参数。
+
+```bash
+ADMIN_TOKEN="<用 admin@cineverse.local / Admin@12345 登录拿到的 accessToken>"
+
+# 销售报表——按日粒度统计近 7 天营收(只统计 CONFIRMED booking 的 SUCCEEDED
+# 支付;ORPHANED_SUCCESS 的金额单独在 pendingReconciliationAmount 里,不计入
+# totalRevenue,见 CLAUDE.md Phase 8 的营收口径说明)
+curl -s "http://localhost:8081/api/v1/admin/reports/sales?from=2026-08-01&to=2026-08-07&granularity=day" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+
+# 可选按电影/影厅细分——加 movieId 或 hallId 缩小到某一部电影/某个影厅
+curl -s "http://localhost:8081/api/v1/admin/reports/sales?from=2026-08-01&to=2026-08-07&granularity=week&hallId=21111111-1111-1111-1111-111111111111" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+
+# 上座率分析——按场次统计已订座位数(仅 CONFIRMED)/ 总座位数
+curl -s "http://localhost:8081/api/v1/admin/reports/occupancy?from=2026-08-01&to=2026-08-07" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+```
+
+响应形状(销售报表)：
+
+```json
+{
+  "from": "2026-08-01", "to": "2026-08-07", "granularity": "DAY",
+  "currency": "myr",
+  "buckets": [
+    { "periodStart": "2026-08-01", "revenue": 0, "bookingCount": 0 },
+    { "periodStart": "2026-08-04", "revenue": 50.00, "bookingCount": 2 }
+  ],
+  "totalRevenue": 50.00,
+  "pendingReconciliationAmount": 0
+}
+```
+
+`buckets` 覆盖 `from`~`to` 范围内每一个粒度单位(哪怕当天/当周没有营收也会
+补一条 `revenue: 0` 的记录,不会跳过——见 `ReportRepository.salesBuckets`
+的 `generate_series` 补零逻辑),前端画图不需要自己判断缺口。
+
+### CSV / PDF 导出
+
+在对应查询接口的路径后面加 `/export`,参数完全一样,额外加一个
+`format=csv|pdf`：
+
+```bash
+# 销售报表导出 CSV(响应带 Content-Disposition: attachment,浏览器/curl -O 都会触发下载)
+curl -s "http://localhost:8081/api/v1/admin/reports/sales/export?from=2026-08-01&to=2026-08-07&granularity=day&format=csv" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -o sales-report.csv
+
+# 上座率分析导出 PDF
+curl -s "http://localhost:8081/api/v1/admin/reports/occupancy/export?from=2026-08-01&to=2026-08-07&format=pdf" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -o occupancy-report.pdf
+```
+
+`format` 传除 `csv`/`pdf` 之外的值(大小写不敏感)会得到 `400`。未登录调用
+任意 `/admin/reports/**` 接口得到 `401`;登录了但角色是 `CUSTOMER` 得到
+`403`;`to` 早于 `from` 得到 `400`。本地跑完整测试(用固定 fixture 断言
+聚合数字,不是只断言 200)：
+
+```bash
+cd cineverse-backend
+mvn test -Dtest=ReportFlowIntegrationTest
+```
+
+### 前端管理后台
+
+打开 `http://localhost:3000/admin/dashboard`(用 `admin@cineverse.local` 登录
+后,导航栏会出现"管理后台"入口)。未登录访问会被 `proxy.ts` 弹到登录页;
+登录了但角色是 `CUSTOMER` 直接改地址栏输入这个 URL,会被
+`app/admin/layout.tsx` 的角色校验弹回首页——这个校验在页面内容渲染之前就
+生效,不是"入口对非 ADMIN 隐藏"这种前端伪保护,详见 CLAUDE.md Phase 8。

@@ -131,6 +131,49 @@
   --sidebar-ring: #f4c430;
 }
 
+/* Admin dashboard (Phase 8) — the second deliberate exception to "everything
+   is Liquid Glass dark", after the seat map's performance exception (see
+   CLAUDE.md 1.5). A data-dense screen (charts + tables + filters) reads
+   faster on a light, flat surface than translucent glass, and re-declaring
+   the same custom-property names inside .admin-light lets every existing
+   token-driven component (Card, Badge, Button, Input, …) just work here
+   unmodified — no admin-specific component variants needed. Custom
+   properties cascade like any other CSS property, so a redeclaration on this
+   wrapper div (a descendant of the always-.dark <html>) wins for its whole
+   subtree; nothing outside /admin is affected. Values below mirror :root's
+   light palette 1:1 except --primary/--primary-foreground/--ring, which stay
+   the brand gold — a solid swatch with dark text reads fine regardless of
+   whether the surrounding chrome is light or dark, so there's no contrast
+   reason to change it, only a brand-consistency reason to keep it. */
+.admin-light {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: #f4c430;
+  --primary-foreground: #1a1506;
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: #f4c430;
+  /* Chart mark color only — NOT used for text/buttons. #F4C430 at its
+     display lightness (OKLCH L≈0.84) fails WCAG fill-contrast against a
+     white chart surface (~1.6:1, needs ≥3:1); this deeper amber (L≈0.53)
+     is the same hue family shifted dark enough to read as a bar/line fill.
+     Verified with the dataviz skill's validate_palette.js:
+     `node validate_palette.js "#B8860B" --mode light --surface "#ffffff"`
+     → lightness band PASS, contrast vs surface PASS (>=3:1). */
+  --chart-amber: #b8860b;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

@@ -24,6 +24,15 @@ export function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
+// /admin/:path* gets the same coarse "is there even a refresh cookie" gate
+// as /profile and /bookings — nothing more is possible here. The refresh
+// token cookie carries no role claim (only the in-memory access token JWT
+// does — see JwtService.generateRefreshToken vs generateAccessToken on the
+// backend), so Proxy cannot tell an ADMIN's cookie from a CUSTOMER's; it can
+// only rule out "definitely signed out". The real ADMIN-role check —
+// definitive, not a hidden-entry-point pseudo-guard — happens client-side in
+// app/admin/layout.tsx via fetchCurrentUser(), the same "coarse gate here,
+// definitive check after mount" split /profile already uses.
 export const config = {
-  matcher: ["/profile/:path*", "/bookings/:path*"],
+  matcher: ["/profile/:path*", "/bookings/:path*", "/admin/:path*"],
 };

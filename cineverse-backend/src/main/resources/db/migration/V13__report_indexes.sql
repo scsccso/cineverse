@@ -1,0 +1,12 @@
+-- Phase 8: admin sales/occupancy reports. Both the revenue and the
+-- "pending reconciliation" (ORPHANED_SUCCESS) queries filter payments by
+-- status and then range-scan/bucket on updated_at (see CLAUDE.md Phase 8 for
+-- why updated_at, not created_at, is the revenue-recognition timestamp) — a
+-- composite (status, updated_at) index lets Postgres satisfy the status
+-- filter and the range scan from a single index instead of a full table
+-- scan. bookings/showtimes already have everything the occupancy query
+-- needs (idx_bookings_showtime_status from V9 covers the CONFIRMED-seats
+-- correlated subquery; idx_showtimes_start_time/hall_id/movie_id from V7
+-- cover the showtime-range + hall/movie filters), so this is the only new
+-- index this Phase adds — not padding for its own sake.
+CREATE INDEX idx_payments_status_updated_at ON payments (status, updated_at);
