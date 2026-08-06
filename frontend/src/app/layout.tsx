@@ -3,8 +3,6 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth/auth-context";
-import { Navbar } from "@/components/layout/navbar";
-import { PageTransition } from "@/components/motion/page-transition";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -53,13 +51,8 @@ export default function RootLayout({
       data-scroll-behavior="smooth"
       className={`dark ${inter.variable} ${jetbrainsMono.variable} ${clashDisplay.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground">
-        <AuthProvider>
-          <Navbar />
-          <main className="flex-1">
-            <PageTransition>{children}</PageTransition>
-          </main>
-        </AuthProvider>
+      <body className="min-h-full bg-background text-foreground">
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );
