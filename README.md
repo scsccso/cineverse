@@ -54,8 +54,10 @@ CineVerse/
 └── frontend/                 # Next.js 前端
     ├── .env.example           # NEXT_PUBLIC_API_BASE_URL 样例
     └── src/
-        ├── app/               # 路由:/, /login, /register, /profile, /showtimes/[id](/seats), /bookings/[id]/confirmed
-        ├── components/        # ui(shadcn) / auth / layout / motion / booking(选座 + 支付确认)
+        ├── app/
+        │   ├── (customer)/    # 顾客端路由组(暗色 Navbar 外壳):/, /login, /register, /profile, /showtimes/[id](/seats), /bookings/[id]/confirmed
+        │   └── admin/         # 管理后台(独立 AdminHeader 外壳 + 角色校验):/admin/dashboard
+        ├── components/        # ui(shadcn) / auth / layout / motion / booking(选座 + 支付确认) / admin(报表图表、筛选器、导出按钮)
         ├── lib/                # api 客户端、auth context、zod schema
         └── proxy.ts           # 路由保护(Next 16:middleware 改名 proxy)
 ```
@@ -116,4 +118,4 @@ npm run lint
 
 详细的API调试命令和环境配置见 [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md)。
 
-完整的技术栈选型、架构原则与模块路线图见 [`CLAUDE.md`](./CLAUDE.md)。
+想深挖某个技术决定背后的权衡过程(比如为什么选 Stripe Checkout 而不是自建支付表单、座位锁 TTL 为什么是 5 分钟、Redis 没有持久化时怎么兜底)可以看 [`CLAUDE.md`](./CLAUDE.md)——完整记录了每一步架构选型和取舍的原因,是给愿意刨根问底的读者(比如面试官)准备的加分材料,不是理解这个项目必须先读完的前提。
