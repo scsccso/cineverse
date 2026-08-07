@@ -48,7 +48,7 @@ export default async function MovieDetailPage({
       </div>
 
       <div className="mx-auto -mt-24 max-w-5xl px-6 pb-20">
-        <GlassCard className="flex flex-col gap-6 p-6 sm:flex-row sm:p-8">
+        <GlassCard className="flex flex-col gap-6 p-6 sm:flex-row sm:items-start sm:p-8">
           <div className="relative aspect-[2/3] w-40 shrink-0 overflow-hidden rounded-2xl sm:w-48">
             <Image
               src={resolveMediaUrl(movie.posterUrl)}

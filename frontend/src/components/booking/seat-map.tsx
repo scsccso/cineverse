@@ -35,12 +35,7 @@ export function SeatMap({
           container scrolls instead of the seats shrinking. */}
       <div className="overflow-x-auto pb-2">
         <div className="mx-auto flex w-fit min-w-full flex-col items-center gap-6 px-2">
-          <div className="w-full max-w-md">
-            <div className="h-1.5 w-full rounded-full bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
-            <p className="mt-2 text-center text-xs tracking-[0.3em] text-muted-foreground">
-              银幕 · {hallName}
-            </p>
-          </div>
+          <ScreenIndicator hallName={hallName} />
 
           <div className="flex flex-col gap-2.5">
             {rows.map(([rowLabel, rowSeats]) => (
@@ -70,6 +65,57 @@ export function SeatMap({
       </div>
 
       <SeatLegend />
+    </div>
+  );
+}
+
+/**
+ * Purely decorative "you're standing in front of the screen" cue — an arc +
+ * soft glow standing in for the old flat gradient bar (see
+ * docs/design-proposal-customer-editorial.md, section 2.1). Doesn't read
+ * any seat data and carries no state; the accessible label is still the
+ * plain-text "银幕 · {hallName}" line below it, same as before. `aria-hidden`
+ * on the SVG (and the all-caps "SCREEN" glyph next to it) keeps screen
+ * readers from getting two competing announcements of the same fact.
+ */
+function ScreenIndicator({ hallName }: { hallName: string }) {
+  return (
+    <div className="w-full max-w-md">
+      <svg viewBox="0 0 400 56" className="h-9 w-full" aria-hidden="true">
+        <defs>
+          <linearGradient id="screen-arc-glow" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="var(--primary)" stopOpacity="0" />
+            <stop offset="50%" stopColor="var(--primary)" stopOpacity="0.9" />
+            <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {/* Soft blurred duplicate sits behind the crisp line to read as a glow. */}
+        <path
+          d="M 10 34 Q 200 4 390 34"
+          fill="none"
+          stroke="url(#screen-arc-glow)"
+          strokeWidth="10"
+          strokeLinecap="round"
+          className="blur-md"
+          opacity="0.7"
+        />
+        <path
+          d="M 10 34 Q 200 4 390 34"
+          fill="none"
+          stroke="url(#screen-arc-glow)"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+      </svg>
+      <p
+        aria-hidden="true"
+        className="-mt-1 text-center text-[10px] font-semibold tracking-[0.5em] text-muted-foreground/70"
+      >
+        SCREEN
+      </p>
+      <p className="mt-1 text-center text-xs tracking-[0.3em] text-muted-foreground">
+        银幕 · {hallName}
+      </p>
     </div>
   );
 }

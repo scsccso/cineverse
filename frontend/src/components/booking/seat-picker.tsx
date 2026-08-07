@@ -20,6 +20,7 @@ const NOTICE_TIMEOUT_MS = 6000;
 interface SeatPickerProps {
   showtimeId: string;
   movieTitle: string;
+  movieBackdropUrl: string;
   hallLabel: string;
   showDate: string;
   showTime: string;
@@ -32,6 +33,7 @@ interface SeatPickerProps {
 export function SeatPicker({
   showtimeId,
   movieTitle,
+  movieBackdropUrl,
   hallLabel,
   showDate,
   showTime,
@@ -247,6 +249,7 @@ export function SeatPicker({
       <BookingConfirmation
         booking={booking}
         movieTitle={movieTitle}
+        movieBackdropUrl={movieBackdropUrl}
         onExpire={handleExpire}
         onCancel={handleCancel}
         isCancelling={isCancelling}

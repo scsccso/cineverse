@@ -28,7 +28,11 @@ public abstract class ShowtimeMapper {
         String posterUrl = (movie.getPosterUrl() != null && !movie.getPosterUrl().isBlank())
                 ? movie.getPosterUrl()
                 : storageProperties.defaultPosterUrl();
-        return new ShowtimeResponse.MovieSummary(movie.getId(), movie.getTitle(), movie.getDurationMinutes(), posterUrl);
+        String backdropUrl = (movie.getBackdropUrl() != null && !movie.getBackdropUrl().isBlank())
+                ? movie.getBackdropUrl()
+                : storageProperties.defaultBackdropUrl();
+        return new ShowtimeResponse.MovieSummary(
+                movie.getId(), movie.getTitle(), movie.getDurationMinutes(), posterUrl, backdropUrl);
     }
 
     protected ShowtimeResponse.HallSummary toHallSummary(Hall hall) {

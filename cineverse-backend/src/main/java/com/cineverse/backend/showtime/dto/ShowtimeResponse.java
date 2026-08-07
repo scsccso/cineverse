@@ -23,7 +23,8 @@ public record ShowtimeResponse(
             UUID id,
             @Schema(example = "Interstellar") String title,
             @Schema(example = "169") Integer durationMinutes,
-            @Schema(description = "Never null — falls back to a placeholder image when not set") String posterUrl) {
+            @Schema(description = "Never null — falls back to a placeholder image when not set") String posterUrl,
+            @Schema(description = "Never null — falls back to a placeholder image when not set") String backdropUrl) {
     }
 
     public record HallSummary(

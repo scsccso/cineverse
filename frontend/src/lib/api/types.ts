@@ -75,6 +75,7 @@ export interface ShowtimeMovieSummary {
   title: string;
   durationMinutes: number;
   posterUrl: string;
+  backdropUrl: string;
 }
 
 export interface ShowtimeHallSummary {

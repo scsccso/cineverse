@@ -40,6 +40,7 @@ export default async function SeatSelectionPage({
       <SeatPicker
         showtimeId={id}
         movieTitle={showtime.movie.title}
+        movieBackdropUrl={showtime.movie.backdropUrl}
         hallLabel={`${showtime.hall.name} · ${showtime.hall.cinemaName}`}
         showDate={formatShowDate(showtime.startTime)}
         showTime={formatShowTime(showtime.startTime)}
