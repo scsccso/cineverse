@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { useAuth } from "@/lib/auth/auth-context";
 import { ApiError } from "@/lib/api/client";
 import type { UserResponse } from "@/lib/api/types";
@@ -11,8 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { LogoutButton } from "@/components/auth/logout-button";
-
-const EASE_APPLE = [0.22, 1, 0.36, 1] as const;
+import { FadeIn } from "@/components/motion/fade-in";
 
 function initials(fullName: string) {
   return fullName
@@ -91,7 +89,7 @@ export default function ProfilePage() {
 
   if (authStatus === "loading" || (authStatus === "authenticated" && !profile && !loadError)) {
     return (
-      <section className="mx-auto max-w-2xl px-6 py-16">
+      <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-2xl flex-col justify-center px-6 py-16">
         <ProfileSkeleton />
       </section>
     );
@@ -99,7 +97,7 @@ export default function ProfilePage() {
 
   if (loadError) {
     return (
-      <section className="mx-auto max-w-2xl px-6 py-16 text-center text-muted-foreground">
+      <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-2xl flex-col justify-center px-6 py-16 text-center text-muted-foreground">
         {loadError}
       </section>
     );
@@ -110,12 +108,8 @@ export default function ProfilePage() {
   }
 
   return (
-    <section className="mx-auto max-w-2xl px-6 py-16">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: EASE_APPLE }}
-      >
+    <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-2xl flex-col justify-center px-6 py-16">
+      <FadeIn>
         <Card>
           <CardHeader className="flex flex-row items-center gap-4">
             <div className="flex size-16 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-semibold text-primary-foreground">
@@ -146,7 +140,7 @@ export default function ProfilePage() {
             </div>
           </CardContent>
         </Card>
-      </motion.div>
+      </FadeIn>
     </section>
   );
 }

@@ -8,7 +8,7 @@
 > 每张表标注了"引入于"哪个 Phase——对照 `CLAUDE.md` 第 3 节的 Phase
 > 记录,能查到"当时为什么这么设计"的完整背景和权衡过程,本文件本身只
 > 整理"现状是什么",不重复那些设计推理。
-> 当前覆盖:V1 ~ V13(Phase 1~8)。
+> 当前覆盖:V1 ~ V17(Phase 1~8 + 三次审计后的数据补丁)。
 
 ---
 
@@ -29,6 +29,10 @@
 | `V11__payments_orphaned_success_status.sql` | 修正 `payments.status` 的 CHECK 约束,新增 `ORPHANED_SUCCESS` | Phase 6(事后补丁) |
 | `V12__bookings_redeemed_at.sql` | `bookings` 新增 `redeemed_at` 字段(入场核销) | Phase 7 |
 | `V13__report_indexes.sql` | 新增 `idx_payments_status_updated_at`(`payments.status, updated_at` 复合索引),支撑管理后台报表的过滤 + 范围扫描 | Phase 8 |
+| `V14__update_movie_poster_urls.sql` | 数据补丁(非 schema 变更):按 `title` 匹配,给 `Dune Part Three` 补上从 OMDb API 拿到的真实 `poster_url`/`backdrop_url` | 审计后修复(见 CLAUDE.md) |
+| `V15__delete_test_seed_movies.sql` | 数据清理(非 schema 变更):按依赖顺序删除 `Verify Fix`/`Verify Movie`/`E2E Test Movie` 三部测试 fixture 及其关联的 `showtimes`/`bookings`/`payments` | 审计后修复(见 CLAUDE.md) |
+| `V16__seed_diverse_movies.sql` | 种子数据(非 schema 变更):补充 10 部真实、类型多样的电影(OMDb 匹配 + 硬编码 UUID,含 `movie_genres` 关联) | 审计后修复(见 CLAUDE.md) |
+| `V17__update_movie_backdrop_urls.sql` | 数据补丁(非 schema 变更):按 `title` 匹配,把全部 11 部电影的 `backdrop_url` 从 OMDb 海报图换成 TMDB 的真实横版剧照(`poster_url` 不变) | 审计后修复(见 CLAUDE.md) |
 
 ---
 
@@ -315,3 +319,7 @@ Phase 8 的销售报表把它单独统计成"待对账金额",不计入营收总
 | `V2__seed_admin.sql` | 固定管理员账号 `admin@cineverse.local` | **上线前必须删除或用 Flyway 环境过滤跳过**,不能把固定密码账号带上线 |
 | `V4__seed_genres.sql` | 15 个固定 genre | 没有 genre 管理 API,这是唯一的数据来源 |
 | `V6__seed_cinema_halls_seats.sql` | 1 分店 + 3 影厅(各自不同行列数)+ 对应座位 | MVP 规模的固定演示数据,ID 是硬编码的 UUID,方便本地/集成测试直接引用(见 `docs/DEVELOPMENT.md`) |
+| `V14__update_movie_poster_urls.sql` | 给 `Dune Part Three` 回填真实海报图(OMDb API,详见 CLAUDE.md"种子数据的海报图来源"一节) | 按 `title` 匹配、不是 `id`,在没有这行数据的环境上是安全的空操作;图片是热链 `m.media-amazon.com`,不经本地存储 |
+| `V15__delete_test_seed_movies.sql` | 删除 3 部测试 fixture 电影(`Verify Fix`/`Verify Movie`/`E2E Test Movie`),按 FK 依赖顺序连带清理它们的 `showtimes`/`bookings`/`payments` | 按 `title` 匹配;删除顺序是 `payments → bookings → showtimes → movies`,三层 `ON DELETE RESTRICT` 都是显式 `DELETE`,不依赖 CASCADE |
+| `V16__seed_diverse_movies.sql` | 补充 10 部真实、类型多样的电影(科幻/剧情/动作/动画/喜剧/恐怖/犯罪/奇幻/传记),含海报图 + genre 关联,详见 CLAUDE.md"种子数据扩充"一节 | `movies`/`movie_genres` 用硬编码 UUID(`30000000-...-0000000000N`),方便本地/集成测试直接引用;海报同样是热链 `m.media-amazon.com` |
+| `V17__update_movie_backdrop_urls.sql` | 全部 11 部电影的 `backdrop_url` 换成 TMDB 的真实横版剧照(`image.tmdb.org`),`poster_url` 不变,详见 CLAUDE.md"poster_url/backdrop_url 从此是两个不同数据源"一节 | 按 `title` 匹配;TMDB 免费层禁止商用、要求可见署名(logo + 指定文案),目前项目里还没有加这个署名 UI,是已知待办 |

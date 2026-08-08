@@ -17,6 +17,23 @@ const nextConfig: NextConfig = {
         port: apiBaseUrl.port,
         pathname: "/**",
       },
+      // OMDb API poster images (see docs/DEVELOPMENT.md's seed-data section)
+      // are hotlinked straight from Amazon's CDN rather than downloaded and
+      // re-hosted through StorageService — this is the host every OMDb
+      // "Poster" field resolves to, not specific to any one movie.
+      {
+        protocol: "https",
+        hostname: "m.media-amazon.com",
+        pathname: "/**",
+      },
+      // TMDB backdrop images (see CLAUDE.md "backdrop 和 poster 分别用两个
+      // 不同数据源") — every image.tmdb.org/t/p/{size}/ URL resolves through
+      // this one host regardless of size prefix or movie.
+      {
+        protocol: "https",
+        hostname: "image.tmdb.org",
+        pathname: "/**",
+      },
     ],
   },
 };

@@ -23,14 +23,15 @@ export function AdminHeader({ user }: { user: UserResponse | null }) {
           >
             <Clapperboard className="size-5 text-primary" aria-hidden />
             Cine<span className="text-primary">Verse</span>
-            <span className="text-sm font-normal text-muted-foreground">管理后台</span>
+            <span className="hidden text-sm font-normal text-muted-foreground sm:inline">管理后台</span>
           </Link>
           <Link
             href="/"
+            aria-label="返回前台"
             className="flex h-11 items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="size-4" aria-hidden />
-            返回前台
+            <span className="hidden sm:inline">返回前台</span>
           </Link>
         </div>
 

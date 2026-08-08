@@ -211,6 +211,30 @@ Glass)——`/admin/dashboard` 实际渲染出来是"暗色导航栏 + 浅色内
   图标双重编码、`isAnimationActive={false}` 均原样保留,用 Playwright 实测
   确认预设按钮仍是 44×44、图表数量和交互未受影响。
 
+### 1.5.3 登录/注册表单卡片保留 Card,不用 GlassCard(2026-08-08)
+
+`LoginForm`/`RegisterForm` 的外层容器(`app/(customer)/login/page.tsx`、
+`app/(customer)/register/page.tsx`)一直用的是普通 `Card`,不是全站默认的
+`GlassCard`——这是继座位图(1.5 节,性能驱动)、admin 后台(1.5.1,内容形态/
+可读性驱动)之后,第三个有意偏离"新卡片默认基于 `GlassCard`"这条规则的地方,
+之前没有正式记录进设计系统文档,这次补上,不是这次新做的改动。
+
+- **为什么例外:专注度驱动,不是性能或密度问题**。登录/注册是任务型页面——
+  用户要做的唯一一件事是准确填对邮箱/密码然后提交,`GlassCard` 的核心卖点
+  (跟随指针实时移动的高光,见 1.5 节开头)恰恰会在这种场景起反作用:眼睛
+  在输入框之间移动、鼠标在表单区域内挪动去点击下一个字段时,高光跟着一起
+  漂移,是在和"专心看清自己在填什么"这个任务抢注意力。电影卡片、场次卡片
+  这类浏览型 UI 里,同样的高光是"引导视线、增加沉浸感"的加分项,但角色一换
+  成"表单容器",这个反而是减分项。
+- **不是"忘了套组件",是评估过后维持现状**:`Card` 本身自带的细边框 +
+  `shadow-sm`(和 admin 卡片同一套基础视觉语言,见 1.5.1)已经足够把表单
+  和背景区分开,不需要玻璃拟态的模糊背景 + 光斑去做这件事。
+- **无障碍标准不受影响**:这两个页面的输入框/按钮高度(`Input`/`Button` 组件
+  默认值已经是 `h-11`,见"审计后修复"一节)、表单校验的进出场动效
+  (`AnimatedFieldError`/`AnimatedFormBanner`/`SubmitProgressBar`,均已支持
+  `prefers-reduced-motion`)都和其余页面遵守同一套标准,只是外层容器换成
+  `Card`,不影响这些已有的无障碍实现。
+
 ---
 
 ## 2. 架构原则
@@ -829,9 +853,10 @@ GET),但对跨站的 XHR/fetch、跨站 POST 仍然和 `Strict` 一样不带 coo
   标出当前选中项(不是只变个颜色);两个图表各自配一个 `<details>`
   折叠的数据表格(dataviz 方法论"图表之外始终存在一份可读表格"的要求),
   表格本身没有任何数字是图表之外读不到的;导出按钮的加载态图标同时带
-  `motion-reduce:animate-none`;自定义日期选择器的 `<input type="date">`
-  和筛选器按钮都显式给了 `h-11`(44px)高度,不依赖会被 `Input` 组件默认
-  `h-8` 尺寸覆盖掉的隐式高度。
+  `motion-reduce:animate-none`;筛选器按钮显式给了 `h-11`(44px)高度,
+  自定义日期选择器的 `<input type="date">` 当时也手动加了 `h-11` 覆盖
+  ——2026-08-08 的审计后修复把 `Input` 组件自身的默认高度改成了 `h-11`
+  (见下面"审计后修复"一节),这两处手动覆盖已经跟着删掉,不是遗漏。
 - **没有在筛选器里暴露 `movieId`/`hallId` 下拉框**——后端两个报表接口都
   支持这两个过滤参数(见上面的关键决定),但前端这次交付的筛选器只做了
   任务要求的"预设时间范围按钮 + 自定义起止日期",电影/影厅细分是后端能力
@@ -842,6 +867,347 @@ GET),但对跨站的 XHR/fetch、跨站 POST 仍然和 `Strict` 一样不带 coo
 和以往每个 Phase 一样,交付前同步更新了 CLAUDE.md(本节)、README.md("当前
 状态"一行)、`docs/DEVELOPMENT.md`(报表/导出接口的 curl 示例)、
 `docs/DATABASE.md`(`V13` 迁移 + 索引记录),不是只在 CLAUDE.md 里写"做完了"。
+
+### 审计后修复(2026-08-08,不算新 Phase)
+不是新功能,是一次针对既有代码的技术债审计,发现三类此前没系统性处理过的
+问题,逐一修掉:
+
+- **`Input` 组件默认高度从 `h-8` 提到 `h-11`**(`components/ui/input.tsx`)——
+  照抄 1.5 节记录过的那次 `Button` 修法(`default`/`lg` 变体从 `h-8`/`h-9`
+  统一提到 `h-11`):不是每个用到 `Input` 的地方各自记得加 `h-11` 覆盖,而是
+  组件默认值本身达标,新写一个不带高度覆盖的 `<Input>` 也会自动符合 44×44。
+  `components/admin/date-range-filter.tsx` 里两处因此变得多余的
+  `className="h-11"` 已经删掉(改前后视觉高度一致,只是覆盖变成了默认值)。
+- **`prefers-reduced-motion` 补全到此前遗漏的组件**:1.5 节记录的
+  `GlassCard`/`GlassSkeleton`/`HeroCarousel` 三处只是当时做到位的部分,审计
+  发现 `components/motion/` 下另外四个组件(`page-transition.tsx`、
+  `submit-progress-bar.tsx`、`animated-form-banner.tsx`、
+  `animated-field-error.tsx`)和 `seat-map.tsx` 的 `SeatButton`
+  `whileTap` 完全没做判断——都补上了,统一沿用"把 duration/偏移量清零"这个
+  已有的降级写法(`page-transition.tsx`/`HeroCarousel` 一直是这么做的),
+  没有引入 `initial={false}` 这套第二种写法。`SubmitProgressBar` 单独
+  值得一提:它内层那条无限循环滑动的进度条(`repeat: Infinity`)是真正需要
+  处理的部分——循环动效比一次性过渡更该被这个设置关掉——reduced motion 时
+  换成一条静态满宽度进度条,不是简单把循环动画时长缩短。`SeatButton` 的
+  `useReducedMotion()` 判断特意提到父组件 `SeatMap` 里只调用一次、再作为
+  prop 往下传,不是每个座位按钮各自订阅一次(一个影厅上百个座位按钮,原因
+  和"座位按钮不各自套 `GlassCard`"是同一条密度性能考量,见 1.5 节)。
+  顺带把四个文件里各自复制的 `EASE_APPLE` 缓动曲线数组提到
+  `lib/motion.ts` 统一导出;`profile/page.tsx`、
+  `bookings/[id]/confirmed/page.tsx`、`register-form.tsx`(注册成功态)
+  三处几乎相同的 opacity+y 入场动画(此前都没做 reduced-motion 判断)合并成
+  一个共享的 `components/motion/fade-in.tsx`(`<FadeIn>`),内置判断,三处
+  改成直接调用它,不再各自维护一份。
+- **新增 `app/(customer)/error.tsx` + `not-found.tsx`(暗色,复用
+  `GlassCard`)、`app/admin/error.tsx` + `not-found.tsx`(浅色,复用
+  `Card`)**:此前完全没有,`movies/[id]`/`showtimes/[id]` 页面已有的
+  `notFound()` 调用、以及任何未捕获异常,实际渲染出来的都是 Next.js 默认的
+  无样式兜底页。新增的这四个文件都不需要重新声明 `.admin-light`/
+  `AdminHeader`/顾客端 `Navbar`——Next.js 的 `error.tsx`/`not-found.tsx`
+  语义是"包裹同一 segment 的页面内容,但不包裹同一 segment 自己的
+  `layout.tsx`",也就是说 `app/admin/layout.tsx`(以及
+  `app/(customer)/layout.tsx`)在这两个文件渲染时依然正常渲染在外层——
+  实测确认过:临时在 `AdminDashboardPage` 顶部塞一行 `throw new Error(...)`
+  触发 `app/admin/error.tsx`,截图看到 `AdminHeader` 原样还在,内容区换成了
+  新写的浅色错误卡片,验证完立刻还原(`git diff` 确认无残留)。**已知的
+  局限**:`app/admin/not-found.tsx` 目前实际上触发不到——admin 现在只有
+  `/admin/dashboard` 一个静态路由,没有任何动态 segment 或
+  `notFound()` 调用会命中它,真访问一个不存在的 `/admin/xxx` 路径时
+  Next.js 路由层面就已经无法匹配进 `app/admin/` 这棵子树,会掉到内置的
+  全局兜底页,不是这个新文件(已用 Playwright 实测确认,不是猜测)。这个
+  文件目前是为"以后 admin 加了动态路由/`notFound()` 调用"预先埋好的,不是
+  当前就完整生效的功能——如果以后加了 admin 动态页面,记得给对应的
+  "找不到"分支显式调用 `notFound()`,而不是假设这个文件会自动兜底。
+
+### 种子数据的海报图来源(2026-08-08)
+`movies` 表当前 4 行里,只有 **`Dune Part Three` 一部**配了真实海报——`Verify
+Fix`/`Verify Movie`/`E2E Test Movie` 三部是历次手动测试/E2E 跑出来的测试
+fixture(标题本身就说明了),故意没有动,继续显示占位图。判断依据、置信度
+分级方法、以及"整批数据是不是普遍虚构"的排查过程不重复记录在这里——这是
+一次性的数据操作,不是需要长期维护的架构决定。
+
+- **图片来源:OMDb API**(`https://www.omdbapi.com/`,`t=` 精确标题查询,
+  key 存在 `.env` 的 `OMDB_API_KEY`,不写死在代码里)。`Dune Part Three`
+  精确匹配到 OMDb 的 `Dune: Part Three`(2026,导演 Denis Villeneuve,
+  imdbID `tt31378509`)——这个库的 `movies` 表**没有 release_date/year
+  字段**,没法按"年份相差不超过 1 年"这条对年份做二次校验,置信度判断
+  只能基于标题匹配本身:`t=` 精确标题查询只返回了这一个无歧义结果,不是
+  从多个候选里挑的,这一点撑得住"高置信度"的判断。
+- **直接热链 OMDb 返回的 Amazon 图片 URL,没有下载后经 `StorageService`
+  重新托管**:`poster_url`/`backdrop_url` 两个字段被设成了同一个
+  `m.media-amazon.com` 图片地址(OMDb 免费层没有单独的 backdrop 大图,
+  复用同一张——`resolveMediaUrl()`(`lib/api/client.ts`)本来就支持
+  `http(s)://` 开头的绝对地址原样透传,不需要额外改动)。
+- **`next.config.ts` 需要新增一条 `images.remotePatterns`**:
+  `next/image` 对外部图片域名有白名单限制,之前只放行了后端自己的 origin
+  (posters 一直是后端相对路径),这是第一次出现真正的外部图片域名
+  ——加了 `m.media-amazon.com` 这条(所有 OMDb `Poster` 字段返回的图片都
+  是这个域名,不是这一部电影专属的),改完需要重启 `next dev` 才生效
+  (`next.config.ts` 只在启动时读取,不参与热更新)。
+- **Flyway migration(`V14__update_movie_poster_urls.sql`)是数据补丁,
+  不是新 schema**:这几部电影本身不是通过 Flyway 灌进去的(灌库脚本只到
+  `V4__seed_genres.sql` 为止,后面这 4 行 `movies` 记录是运行中的应用
+  自己插入的——Admin API 或者手动/E2E 测试),但用一条新 migration 去
+  `UPDATE` 依然是对的做法:这样如果本地 Postgres 卷被清掉重建,
+  `flyway migrate` 会自动把这条图片补丁重新应用一遍,不用记得手动补一次。
+  `WHERE` 按 `title` 匹配,不是 `id`——这个环境里的 `id` 是启动时生成的
+  UUID,换一个环境不会存在,按标题匹配在任何没有这行数据的环境上是安全的
+  空操作(0 行受影响,不会报错)。
+- **OMDb 的使用条款,读原文确认过、不是凭印象写的**:官网首页标注
+  "All content licensed under CC BY-NC 4.0"(要求署名 + 禁止商用);
+  `legal.htm` 的条款里更直接:4.2.5 条"You may not build a business
+  utilizing the Contributions, whether or not for profit",第 10 条
+  "The Site is made available to you only for your personal use, and
+  you may not use the Site or any Contributions or Materials in
+  connection with any commercial endeavors"——**这个限制比"署名"严格
+  得多,是"个人/非商用"的硬约束,不是加个credit就能商用**。CineVerse 本身
+  是求职作品集、非商业项目(见第 0 节),现状完全符合这条限制;但如果这个
+  项目以后真的要往商业化方向走,OMDb 这个数据源必须换掉(换成 TMDB 的
+  商用授权层级,或者付费的海报图库),不能继续沿用现在这几张热链图。
+  署名要求(README.md 已加)是这条更严格的非商用限制之外顺带满足的,不是
+  唯一要处理的合规点。
+
+### 种子数据扩充:删除测试 fixture + 补充 10 部真实电影(2026-08-08)
+上一条记录的三部测试 fixture(`Verify Fix`/`Verify Movie`/`E2E Test Movie`)
+这次正式删除了,同时把种子数据从"1 部真实电影"扩到"11 部",覆盖科幻/剧情/
+动作/动画/喜剧/恐怖/犯罪/奇幻/传记等不同类型,给首页 Hero 轮播和"正在热映"
+分区网格足够的视觉区分度(之前 3/4 的卡片都是"暂无海报"占位图)。
+
+- **`V15__delete_test_seed_movies.sql`**:按 FK 依赖顺序显式删——
+  `payments`(`booking_id` RESTRICT)→ `bookings`(`showtime_id` RESTRICT,
+  `booking_seats` 自动 CASCADE)→ `showtimes`(`movie_id` RESTRICT)→
+  `movies`(`movie_genres` 自动 CASCADE)。这三部测试电影里有两部
+  (`Verify Movie`/`E2E Test Movie`)在历次手动测试里已经产生了真实的
+  showtime/booking/payment 记录(选座锁座、Stripe 支付成功/失败都测过),
+  不是空表,直接 `DELETE FROM movies` 会先撞上 RESTRICT 报错——这条
+  migration 按依赖链从下游往上游删,不是绕过约束。全部按 `title` 匹配,
+  和 `V14` 同样的理由(`id` 是运行时生成的,按标题匹配在没这行数据的
+  环境上是安全空操作)。执行后核对过:没有孤儿 `showtimes`/`bookings`/
+  `payments` 残留。
+- **`V16__seed_diverse_movies.sql`**:10 部电影,判断流程和置信度规则
+  跟 `V14` 完全一致(OMDb `t=` 精确标题查询,只要返回单个无歧义结果就是
+  高置信度)——这一批全部一次查中,没有产生需要人工确认的候选清单。
+  选片时刻意覆盖不同年代(1994~2023)和类型,理由见文件顶部注释。字段
+  来源分工:`description`/`content_rating`/`user_rating`/
+  `duration_minutes` 直接取自 OMDb 的 `Plot`/`Rated`/`imdbRating`/
+  `Runtime`;`tagline` 是原创的一句话文案,不是照搬真实营销文案——OMDb
+  本身不提供 tagline 字段,而且没必要为了填这一列去逐字复用片方的广告语。
+  **genre 映射不是 OMDb 标签的直译**:这个项目的 `genres` 表是固定的 15
+  个值(`V4__seed_genres.sql`,没有管理 API),OMDb 返回的标签有时候超出
+  这个范围——`Oppenheimer` 在 OMDb 上是 "Biography, Drama, History",
+  但这个库没有 Biography/History,映射成了 `Drama` + `War`(电影本身是
+  二战时期曼哈顿计划题材,`War` 是现有 15 个值里最贴切的替代,不是随便挑
+  的)。`movies`/`movie_genres` 都用显式硬编码的 UUID 字面量(不是
+  `gen_random_uuid()`),沿用 `V6__seed_cinema_halls_seats.sql` 的既有
+  惯例,方便同一个 migration 里把电影和它的 genre 关联串起来。
+- **海报图片来源、热链方式、`next.config.ts` 白名单、OMDb 条款限制**这些
+  跟 `V14` 完全一样,不重复记录,见上一条。
+
+### `poster_url`/`backdrop_url` 从此是两个不同数据源(2026-08-08)
+`V14`/`V16` 把 `backdrop_url` 设成了跟 `poster_url` 一样的 OMDb 海报图—— 
+当时是有意为之的权宜之计(见 `V14` 那条记录:"OMDb 免费层没有单独的
+backdrop 大图,复用同一张"),但实际效果不好:首页 Hero 是横版
+70vh 的沉浸式区域,拿一张竖版海报硬撑,不只是"构图不对"——OMDb 那批
+海报图本身是给"卡片缩略图"场景校准的分辨率(多数只有 380px 宽),被
+`object-cover` 拉伸铺满一个上千像素宽的横版区域,视觉上明显发虚,肉眼
+能看出来是放大模糊,不是设计意图里的柔焦效果。
+
+- **换成 TMDB(`https://api.themoviedb.org`)专门取 `backdrop_path`**:
+  跟 OMDb 不同,TMDB 的 `backdrop_path` 字段就是为"横版沉浸式背景图"这个
+  场景设计的(真正的剧照,不是海报),`https://image.tmdb.org/t/p/w1280/`
+  前缀能拿到 1280px 宽的版本——用对口的数据源解决对口的问题,不是让
+  OMDb 继续做它本来没设计支持的事。**`poster_url` 完全没动**,还是
+  `V14`/`V16` 那次 OMDb 验证过的数据,这次只碰 `backdrop_url` 一个字段,
+  改动范围刻意收窄。
+- **匹配方式和置信度规则原样沿用**:TMDB 的 `/search/movie` 端点用
+  `query=`(标题)+`year=`(年份)查询,置信度判断标准比 OMDb 那次更严格
+  一点——不只是"标题匹配",还要求 `release_date` 的年份也对得上(TMDB
+  不像 OMDb 的 `t=` 那样能返回单一无歧义结果,`/search/movie` 一律返回
+  数组,所以多加了年份这层校验);这一轮 11 部电影全部一次命中,标题、
+  年份都对得上,即使个别查询返回了多个候选(比如 "Interstellar" 还搜出
+  一部不相关的同名纪录片),排第一的结果和其余候选的热度(`popularity`
+  字段)差距都很大,没有真正意义上的歧义,所以这次也没有产生需要人工
+  确认的清单。
+- **`V17__update_movie_backdrop_urls.sql` 只写 `UPDATE ... SET
+  backdrop_url = ...`,不碰 `poster_url`/其余字段**——延续 `V14` 起的
+  按 `title` 匹配惯例(不依赖运行时生成的 `id`)。`next.config.ts` 加了
+  `image.tmdb.org` 这条 remotePattern,跟当初给 `m.media-amazon.com`
+  开白名单是同一件事的重复,同样需要重启 `next dev` 才生效。
+- **顺手复核了 `HeroCarousel` 的渐变蒙层,结论是不用改**:换真实背景图
+  之前怀疑"发虚"是蒙层盖太厚导致的,复核后发现这个组件本来就**没有任何
+  CSS 模糊滤镜**——唯一的处理是一层渐变(`from-background
+  via-background/40 to-background/10`,底部深、顶部浅,配合文字卡片
+  常驻在底部这个布局),之前的发虚完全是"低分辨率海报被拉伸"这一个原因
+  造成的,换上 TMDB 的 1280px 剧照后问题就没了,这层渐变本身的透明度
+  参数没有改动的必要——换完图之后实测过(截图对比 4 个不同的 Hero 轮播
+  画面),渐变现在读起来刚好:文字卡片区域够暗、可读性没问题,同时图片
+  细节在上半部分清晰可见,没有被过度遮盖。
+- **TMDB 的使用条款,同样读了原文,不是凭印象**:免费层**明确禁止任何
+  商业用途**("does not permit any commercial use of TMDB, the TMDB
+  APIs, or TMDB Content"),且要求可见的署名——必须展示 TMDB 官方 logo,
+  加一句原文规定的文案("This product uses the TMDB API but is not
+  endorsed or certified by TMDB"),logo 的视觉权重还必须"低于应用自己的
+  品牌标识"。这比 OMDb 的条款更具体、约束力更强(OMDb 没有规定必须放
+  logo,TMDB 明确要求)。**这次没有在界面上加这个 TMDB 署名**——这次改动
+  范围只到"换数据源、验证效果",没有被要求做 UI 层的合规展示;如果这个
+  项目要严格满足 TMDB 的条款,还差一步:在页面上(比如 footer)加显示
+  TMDB logo + 那句指定文案,这个待办目前没有对应的代码。CineVerse 本身
+  非商用这一点仍然成立(跟 OMDb 那条记录一样),但"非商用"不能替代
+  "署名"这个独立的条款要求,两者不是一回事。
+
+### Hero 背景图:裁切位置修正 + 一次排除法排查(2026-08-08)
+换上 TMDB 真实剧照之后(见上一条),又发现两个独立的观感问题——这两个
+问题分开处理,没有混在一起改,原因和排查过程记录如下。
+
+- **裁切位置:`object-position` 从默认居中改成 `50% 30%`**
+  (`hero-carousel.tsx`)。根因是 Hero 容器(`h-[70vh]`,1440×900 视口下
+  约 1440×630,宽高比≈2.29)比 TMDB 的 16:9 剧照(1280×720,宽高比
+  1.78)更"扁宽"——`object-cover` 默认居中裁切会导致上下各裁掉一截
+  (算下来大约各 90px),很多剧照的关键构图(天空、远景)正好在这一截
+  里被切掉,角色头部因此贴着画面顶部边缘。**不是"poster 缩略图挡住了
+  backdrop"**——排查时先确认了一个前提:这个组件从来没有渲染过 poster
+  缩略图,`<section>` 里全程只有 backdrop 这一张图 + 一个纯文字的
+  `GlassCard`,没有第二张图片可以挪走或调整层级。往上偏 30% 的具体数值
+  是拿这个 Hero 轮播实际会展示的全部 5 部电影(**不是全部 11 部**——
+  首页只把 `nowPlaying.content.slice(0, 5)` 传给 `HeroCarousel`,
+  另外 6 部只在下面"正在热映"网格里以 poster 形式出现,从来不会作为
+  Hero 背景,所以对比范围以这 5 部为准)分别截图对比过,5 部里没有一部
+  因为往上偏而丢失关键内容,大多数(3/5)观感明显更好,不存在"顾此
+  失彼"。
+- **清晰度:排除法排查,不是加大图片尺寸糊弄过去**。怀疑过是不是
+  `<Image fill>` 没设 `sizes` 导致 Next 保守地选了偏小的 srcset 候选
+  ——**这个假设被证伪了**:直接读代码确认 `sizes="100vw"` 一直都在
+  (不是这次新加的),而且实测过它确实在正常工作——用不同视口宽度触发
+  请求,桌面端(1440 css px)选中的是 `w=1920` 候选,移动端(390 css
+  px、DPR 3)选中的是 `w=1200` 候选,这正是 `sizes` 该起的作用(挑一个
+  跟渲染尺寸匹配的候选,不多下载)。**真正的瓶颈是 Next.js 图片优化
+  管线在生成 WebP 的这一步**,发生在"选中哪个候选宽度"这个环节**之后
+  **:抓了浏览器实际收到的响应字节(不是读 URL 参数猜),桌面端请求
+  `w=1920`(源头封顶 1280)最终解码出来是 960×540,移动端请求
+  `w=1200` 最终解码出来是 390×219——移动端这组数字额外验证了一件事:
+  `390` 恰好等于渲染框的 **CSS 像素宽度**,也就是说 DPR=3 的高分屏
+  上,这张图完全没有按视网膜屏幕的需求加倍取样,缺口比桌面端(960 vs
+  理论需要的 1440)更明显。这一层问题出在 Sharp/Next 的 WebP 转码路径
+  里,不是 `sizes` 配置的问题,`sizes` 那道题已经排除掉了,不需要再
+  在这上面花时间——**这个 WebP 管线问题目前还没有修**,是排查完
+  `sizes` 假设之后主动叫停的下一步,留给专门的排查任务,不要顺手在
+  这次改动里蒙混过关。
+
+### Hero 修复没有覆盖到电影详情页,提成共享组件补上(2026-08-08)
+上一条记录的 `object-position: 50% 30%` 只改了 `hero-carousel.tsx`,
+电影详情页(`movies/[id]/page.tsx`)顶部的 backdrop 横幅是完全独立的
+第二份实现——不是共享同一个组件,是两处各自维护一份几乎一样的
+`<Image fill sizes="100vw" className="object-cover">` + 渐变蒙层
+`<div>`,所以上次的修复没有传播过去,不是这次改动引入的新 bug,是
+同一个问题一直存在于两个地方,只是先在 Hero 发现、先在 Hero 修的。
+用截图验证过电影详情页确实是同款"居中裁切"症状(角色头顶贴着画面
+上边缘),换上 `50% 30%` 之后跟 Hero 一样有改善(截图对比过 7 部电影:
+5 部是 Hero 轮播也会出现的,视觉表现现在和 Hero 一致;另外 2 部
+Hero 轮播里从来不会出现——`The Grand Budapest Hotel`、`Oppenheimer`
+——单独确认了修复对 Hero 覆盖不到的电影同样生效)。`sizes="100vw"`
+这边本来就有,不是这次新加的。
+
+- **提成了 `components/movies/movie-backdrop.tsx`(`<MovieBackdrop>`)**
+  ——只抽了会"两边同步改、容易漏改一边"的那一层(`Image` 的
+  `fill`/`sizes`/`object-cover`/`object-position` 组合,紧跟着的渐变
+  蒙层 `<div>`),没有把外层的尺寸容器(`h-[70vh]` vs `h-[50vh]`)和
+  周围的卡片布局也塞进去——Hero 那边这一层还包在一个
+  `AnimatePresence`/`motion.div` 的轮播切换动画里,电影详情页是一次性
+  静态渲染,两边需要的外层结构本来就不一样,硬塞进同一个组件只会换来
+  一堆条件分支,不划算。渐变蒙层的透明度(Hero 是 `via-background/40`,
+  详情页是 `via-background/50`)也保持不统一——这次任务只要求裁切/
+  清晰度参数一致,没有人要求这两处的视觉调性也变成同一个值,所以
+  `gradientClassName` 留成了调用方各自传入的 prop,不是被这次提取
+  强行拉齐的另一个变量。
+- **顺手修了一个真正的潜在 bug,不是这次任务原本要求的**:两处原来
+  用的都是 `preload` 这个 prop——`next/image` 真正的 API 是
+  `priority`,不是 `preload`,`preload` 会被 React 当成未知属性透传到
+  `<img>` 标签上,浏览器不认识这个 HTML 属性,直接忽略,等于两边的
+  首屏图片一直都没有真正拿到"优先加载"的提示。既然这次要重写这几行
+  改成调用共享组件,顺手把 prop 名字改成了真正生效的
+  `priority`——影响范围仅限于加载优先级这一个维度,不影响本次任务
+  验证过的裁切/清晰度效果。
+- `npm run build`/`npm run lint` 跑过,干净。
+
+### 设计债批次修复(2026-08-08,不算新 Phase)
+排好但一直没做的四项技术债,一次性清掉,不涉及新的视觉方向判断——具体
+决定见 1.5.3 节(登录/注册卡片例外)以及下面各条:
+
+- **登录/注册表单卡片保留 `Card`、不用 `GlassCard` 的设计决定补充记录进
+  1.5.3 节**——这是既有事实的补记,不是这次新改的代码,见该节。
+- **首页 Hero 去卡片化**(`hero-carousel.tsx`):去掉包裹文字的 `GlassCard`
+  容器,标题从 `text-3xl sm:text-4xl` 提到 `text-4xl sm:text-5xl
+  lg:text-6xl`,直接叠在背景图上,靠强化过的渐变(`via-background/40` →
+  `/75`)+ 每个文字元素各自的 `text-shadow` 保证可读性,不再靠卡片实底
+  背景。截图对比过桌面端和 390px 移动端,效果符合 Apple TV/apple.com 式
+  的编辑排版观感。
+  - **移动端截图发现了一个自己引入的真实 bug,已修**:标题放大后在 390px
+    宽度下会换行到两行,与垂直居中定位的左右箭头导航按钮
+    (`CarouselArrow`,`top-1/2`)在视觉上重叠。第一次尝试用
+    `top-[38%]`(移动端)/`sm:top-1/2`(sm+)这种任意值 + 断点组合去把箭头
+    往上挪,结果箭头位置完全不对(实测 `getComputedStyle` 显示
+    `top: 590.797px`,即 100% 而不是 38%)——查编译后的 CSS bundle 发现
+    Turbopack dev 的增量编译根本没有为 `top-[38%]` 生成规则(bundle 里
+    完全搜不到 `38%`,只有该文件里本来就存在的 `top-1\/2`),这是一次
+    真实的 Turbopack HMR 增量扫描漏判,不是任意值语法写错。放弃了这个
+    方向,改用桌面端已经验证过、不依赖任意值的方案:箭头改成
+    `hidden sm:flex`(移动端直接不渲染箭头)——下方的圆点指示器本来就是
+    各自独立可点击的 44×44 目标(`aria-label="第 N 部影片"`),移动端并
+    不会因此失去手动切换电影的入口,这也更贴近 Apple 自家轮播在小屏上
+    "只留圆点、不留箭头"的常见做法,不是退而求其次的将就。
+- **`/profile` 页面垂直居中**:三个分支(loading 骨架屏、错误态、正常内容)
+  的外层 `<section>` 统一从 `mx-auto max-w-2xl px-6 py-16` 改成
+  `mx-auto flex min-h-[calc(100vh-4rem)] max-w-2xl flex-col justify-center
+  px-6 py-16`——和 `/login`、`/register` 页面已经在用的居中模式完全一致
+  (`4rem` 对应 sticky Navbar 的 `h-16`),之前是顶部对齐,内容量少时头重
+  脚轻。
+- **移动端导航收纳**(A4/A5):
+  - `Navbar`(`components/layout/navbar.tsx`):新增一个 `md:hidden` 的汉堡
+    按钮 + 下拉面板(简单的 disclosure 模式,不是模态对话框,没有引入新的
+    UI 基础组件),面板内包含"正在热映"/"即将上映"/"影院"三个链接,以及
+    登录态相关的操作(登录/注册,或管理后台/用户名/退出登录)。之前这些
+    在窄屏下的表现是:导航链接 `hidden md:flex` 直接消失,管理后台/用户名
+    链接是单独的 `hidden sm:inline`(和导航链接不同的断点),两条断点线
+    不一致,而且完全没有替代入口——现在统一成一个 `md`(768px)断点:
+    达到即显示完整桌面导航,低于则只显示汉堡按钮,所有内容进面板,不再
+    有两条不同步的断点。面板关闭的时机用 React 官方"根据 prop 变化调整
+    state"的模式(`if (pathname !== prevPathname) { setPrevPathname(...);
+    setMobileOpen(false); }`,渲染期间同步调用而不是塞进
+    `useEffect`)——最初写成 `useEffect(() => setMobileOpen(false),
+    [pathname])`,被 `react-hooks/set-state-in-effect` 规则拦下(effect
+    body 内同步 setState 会触发级联渲染,这条规则 Phase 8 admin dashboard
+    那次已经踩过一次,见上面对应记录),改成这个模式后 lint 通过。
+  - `AdminHeader`(`components/admin/admin-header.tsx`):logo 旁的"管理后台"
+    副标题文字加上 `hidden sm:inline`(之前无条件常驻);"返回前台"链接
+    的文字包一层 `hidden sm:inline`,只留图标(补了一个 `aria-label`
+    "返回前台",因为窄屏下这个链接变成纯图标,需要一个无障碍名称)。用户
+    全名本来就是 `hidden sm:inline`,未改动。窄屏截图确认修复前是"管理\n
+    后台"和"返回前台"各自被挤成两行的乱版式,修复后是干净的单行头部。
+- **admin `StatTile` 警示色统一**(A6):`tone="warning"` 分支原来直接写
+  Tailwind 内置的 `amber-400/60`(边框)/`amber-50`(背景)/`amber-600`
+  (图标),和已经用 `validate_palette.js` 校验过的 `--chart-amber`
+  (`#B8860B`,见上面 Phase 8 关于图表色的记录)不是同一套色相,纯属巧合
+  凑近似色。`globals.css` 的 `.admin-light` 块里新增
+  `--chart-amber-border`/`--chart-amber-surface`,用 `color-mix(in oklch,
+  var(--chart-amber) …, …)` 从这同一个已验证色值派生边框/背景两个色调
+  (`button.tsx` 的 `secondary` variant 已经在用同样的 `color-mix(in
+  oklch, …)` 写法,不是这次新引入的技术)。边框/背景是对同一个已验证
+  色值的透明度/色调派生,不是独立选色,所以不需要单独再跑一次
+  `validate_palette.js`——真正涉及 WCAG 图形对比度的只有
+  `AlertTriangle` 图标本身,它直接用 `--chart-amber`,复用的正是已经
+  验证过 ">=3:1 против 白色 chart 表面" 的那个结论。
+- **验证方式**:四项视觉改动(Hero、profile、两个导航栏)都用 Playwright
+  截图做了修复前后对比,不是只改代码不验证——`before` 截图来自主工作区
+  当时仍在运行的开发服务器(未受这批改动影响,天然是修复前的基准),
+  `after` 截图来自这次改动所在的 worktree 里单独起的开发服务器;因为
+  这两个来源各自需要登录态(profile、admin 页面),而后端 CORS
+  `allowedOrigins` 默认只放行 `http://localhost:3000`(见 Phase 1),
+  额外临时起了一个指向同一个 Postgres/Redis、只是 `CORS_ALLOWED_ORIGINS`
+  换成新端口的第二个后端实例用于截图验证,验证完随手关闭,不是永久新增
+  的运行方式。`npm run build`/`npm run lint` 全部跑过,`mvn compile`
+  (离线模式,复用本地 Maven 仓库缓存)也确认过新增的四个 migration 文件
+  (`V14`~`V17`,均为上一批未提交改动里已经写好、这次一并验证的历史遗留
+  文件)不影响编译。
 
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
