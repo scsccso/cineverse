@@ -3,17 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { getBooking } from "@/lib/api/bookings";
 import type { BookingResponse } from "@/lib/api/types";
 import { GlassCard } from "@/components/glass/glass-card";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { FadeIn } from "@/components/motion/fade-in";
 import { formatShowDate, formatShowTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const EASE_APPLE = [0.22, 1, 0.36, 1] as const;
 const POLL_INTERVAL_MS = 1500;
 /** ~15s of polling — Stripe's webhook normally arrives within a second or two of the redirect; see the "timeout" phase for what happens beyond that. */
 const MAX_ATTEMPTS = 10;
@@ -128,11 +127,7 @@ export default function BookingConfirmedPage() {
 
   return (
     <section className="mx-auto max-w-lg px-6 py-16">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: EASE_APPLE }}
-      >
+      <FadeIn>
         <GlassCard className="p-8">
           <p className="text-sm text-primary">支付成功,订单已确认</p>
           <h1 className="mt-1 font-display text-2xl font-semibold tracking-tight">
@@ -182,7 +177,7 @@ export default function BookingConfirmedPage() {
             查看我的账号
           </Link>
         </GlassCard>
-      </motion.div>
+      </FadeIn>
     </section>
   );
 }

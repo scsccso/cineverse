@@ -6,6 +6,7 @@ import { getMovie } from "@/lib/api/movies";
 import { listShowtimesByMovie } from "@/lib/api/showtimes";
 import type { MovieResponse } from "@/lib/api/types";
 import { GlassCard } from "@/components/glass/glass-card";
+import { MovieBackdrop } from "@/components/movies/movie-backdrop";
 import { Badge } from "@/components/ui/badge";
 import { ShowtimeList } from "@/components/showtimes/showtime-list";
 
@@ -36,15 +37,11 @@ export default async function MovieDetailPage({
   return (
     <div>
       <div className="relative h-[50vh] min-h-[320px] w-full overflow-hidden">
-        <Image
-          src={resolveMediaUrl(movie.backdropUrl)}
-          alt=""
-          fill
-          preload
-          sizes="100vw"
-          className="object-cover"
+        <MovieBackdrop
+          backdropUrl={movie.backdropUrl}
+          gradientClassName="bg-gradient-to-t from-background via-background/50 to-background/10"
+          priority
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-background/10" />
       </div>
 
       <div className="mx-auto -mt-24 max-w-5xl px-6 pb-20">
