@@ -62,7 +62,6 @@ export function DateRangeFilter({ value, onChange }: DateRangeFilterProps) {
             <Input
               id={fromId}
               type="date"
-              className="h-11"
               value={value.from}
               max={value.to}
               onChange={(event) => onChange({ preset: "custom", from: event.target.value, to: value.to })}
@@ -73,7 +72,6 @@ export function DateRangeFilter({ value, onChange }: DateRangeFilterProps) {
             <Input
               id={toId}
               type="date"
-              className="h-11"
               value={value.to}
               min={value.from}
               onChange={(event) => onChange({ preset: "custom", from: value.from, to: event.target.value })}

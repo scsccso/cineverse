@@ -172,6 +172,16 @@
      `node validate_palette.js "#B8860B" --mode light --surface "#ffffff"`
      → lightness band PASS, contrast vs surface PASS (>=3:1). */
   --chart-amber: #b8860b;
+  /* StatTile's "warning" tone (2026-08-08) reuses this same validated hue
+     instead of Tailwind's stock amber-400/50/600 — those are a different,
+     unvalidated hue family that happened to look similar. Border/surface are
+     opacity/tint derivatives of the one checked value above, not
+     independently chosen colors, so they don't need their own
+     validate_palette.js run — the icon (AlertTriangle) is the only piece
+     that's actually a WCAG-relevant mark, and it uses --chart-amber
+     directly, already proven >=3:1 against a white surface. */
+  --chart-amber-border: color-mix(in oklch, var(--chart-amber) 50%, transparent);
+  --chart-amber-surface: color-mix(in oklch, var(--chart-amber) 10%, var(--background));
 }
 
 @layer base {

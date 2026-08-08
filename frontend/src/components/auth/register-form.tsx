@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { motion } from "framer-motion";
 import { CircleCheck } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -15,6 +14,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { AnimatedFieldError } from "@/components/motion/animated-field-error";
 import { AnimatedFormBanner } from "@/components/motion/animated-form-banner";
 import { SubmitProgressBar } from "@/components/motion/submit-progress-bar";
+import { FadeIn } from "@/components/motion/fade-in";
 import { cn } from "@/lib/utils";
 
 export function RegisterForm() {
@@ -46,12 +46,7 @@ export function RegisterForm() {
 
   if (registeredEmail) {
     return (
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-        className="flex flex-col items-center gap-4 py-4 text-center"
-      >
+      <FadeIn y={8} duration={0.3} className="flex flex-col items-center gap-4 py-4 text-center">
         <CircleCheck className="size-10 text-primary" />
         <div>
           <p className="font-medium">注册成功</p>
@@ -62,7 +57,7 @@ export function RegisterForm() {
         <Link href="/login" className={cn(buttonVariants(), "h-11 w-full text-base")}>
           前往登录
         </Link>
-      </motion.div>
+      </FadeIn>
     );
   }
 

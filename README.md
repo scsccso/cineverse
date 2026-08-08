@@ -114,6 +114,21 @@ npm run lint
 直接体验电影/影院/场次的 CRUD 管理功能;或者自行注册一个新账号体验 Customer 的
 选座订票流程。
 
+## 数据来源与致谢
+
+种子数据里的电影海报(`poster_url`)来自 [OMDb API](https://www.omdbapi.com/),
+横版背景图(`backdrop_url`,首页 Hero 轮播用)来自 [TMDB API](https://www.themoviedb.org/)
+——两者分工不同:OMDb 免费层没有专门的横版剧照字段,TMDB 的 `backdrop_path`
+才是,所以海报和背景图特意用了两个不同数据源,各取所长(完整决策记录见
+`CLAUDE.md`)。图片都是直接从对方返回的地址(`m.media-amazon.com` /
+`image.tmdb.org`)读取展示,没有下载后二次分发。
+
+两边的使用条款都禁止商业用途,CineVerse 是非商业的个人作品集项目,符合这条
+限制;如果这份数据以后要用在商业场景,两个来源都需要换成有商用授权的图片
+服务。TMDB 的条款额外要求可见署名(官方 logo + 指定文案,视觉权重要低于
+应用自己的品牌标识)——**这一步目前还没做**,是已知的待办,不是遗漏
+(见 `CLAUDE.md`)。
+
 ---
 
 详细的API调试命令和环境配置见 [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md)。

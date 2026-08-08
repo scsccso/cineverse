@@ -1,8 +1,9 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { CircleAlert, CircleCheck } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { EASE_APPLE } from "@/lib/motion";
 
 interface AnimatedFormBannerProps {
   message?: string | null;
@@ -14,6 +15,8 @@ export function AnimatedFormBanner({
   message,
   variant = "destructive",
 }: AnimatedFormBannerProps) {
+  const reduceMotion = useReducedMotion();
+
   return (
     <AnimatePresence initial={false}>
       {message && (
@@ -22,7 +25,7 @@ export function AnimatedFormBanner({
           initial={{ opacity: 0, height: 0, marginBottom: 0 }}
           animate={{ opacity: 1, height: "auto", marginBottom: 4 }}
           exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: reduceMotion ? 0 : 0.2, ease: EASE_APPLE }}
           className="overflow-hidden"
         >
           <Alert variant={variant === "destructive" ? "destructive" : "default"}>

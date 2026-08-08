@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Heart, Lock } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { SeatStatusEntry } from "@/lib/api/types";
 
@@ -27,6 +27,12 @@ export function SeatMap({
   onToggleSeat,
 }: SeatMapProps) {
   const rows = groupByRow(seats);
+  // Computed once here rather than inside SeatButton — a hall can have 100+
+  // seat buttons, and useReducedMotion() would otherwise mean that many
+  // redundant matchMedia subscriptions for a value that's identical across
+  // all of them (same density-driven reasoning as why seat buttons don't
+  // each instantiate a full GlassCard — see CLAUDE.md 1.5).
+  const reduceMotion = useReducedMotion();
 
   return (
     <div className="space-y-6">
@@ -55,6 +61,7 @@ export function SeatMap({
                       seat={seat}
                       selected={selectedSeatIds.has(seat.seatId)}
                       onToggle={() => onToggleSeat(seat)}
+                      reduceMotion={reduceMotion}
                     />
                   ))}
                 </div>
@@ -124,10 +131,12 @@ function SeatButton({
   seat,
   selected,
   onToggle,
+  reduceMotion,
 }: {
   seat: SeatStatusEntry;
   selected: boolean;
   onToggle: () => void;
+  reduceMotion: boolean | null;
 }) {
   const disabled = seat.status !== "AVAILABLE";
 
@@ -135,7 +144,7 @@ function SeatButton({
     <motion.button
       type="button"
       disabled={disabled}
-      whileTap={disabled ? undefined : { scale: 0.9 }}
+      whileTap={disabled || reduceMotion ? undefined : { scale: 0.9 }}
       onClick={onToggle}
       aria-pressed={selected}
       aria-label={ariaLabel(seat, selected)}
