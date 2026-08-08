@@ -1209,6 +1209,78 @@ Hero 轮播里从来不会出现——`The Grand Budapest Hotel`、`Oppenheimer`
   (`V14`~`V17`,均为上一批未提交改动里已经写好、这次一并验证的历史遗留
   文件)不影响编译。
 
+### 顾客端交互反馈强化(2026-08-09,不算新 Phase)
+方案文档见 `docs/design-proposal-customer-interaction.md`(和
+`docs/design-proposal-customer-editorial.md` 是姊妹文档:那份管"看起来够不够有
+编辑感",这份管"操作时有没有被系统听见")。范围只到顾客端桌面视口,admin 和
+移动端专项都没碰。**贯穿这批改动的硬性前提:任何新增的交互反馈都不能让触屏/
+键盘用户失去等价的可达路径**——下面每一条要么是叠加在既有可点击/可聚焦元素上的
+装饰层,要么是和输入设备无关的提交态反馈,没有一条把某个功能的唯一触发方式
+设计成 hover。
+
+- **`MovieCard` 双重缩放(独立 bug 修复,不算这批交互改动)**:海报 `<Image>`
+  自带 `group-hover:scale-105`,外层 `GlassCard` 又有 `whileHover:{scale:1.02}`,
+  悬停时是两层缩放叠加,而且海报那层是**纯 CSS `:hover`,没有任何
+  `prefers-reduced-motion` 判断**——两处各写各的没对齐,不是刻意设计的层次感。
+  去掉海报这一层,只保留 `GlassCard` 的卡级缩放(一处维护,而且那一层本来就有
+  `useReducedMotion()` 的 JS 判断)。实测确认:静止时两层 transform 都是 `none`,
+  悬停时只有卡片是 `matrix(1.02,...)`、海报保持 `none`。
+- **`GlassCard` 补上 CSS 那一层 reduced-motion 兜底**:1.5 节确立的标准是
+  **JS + CSS 两层**降级,但 `whileHover` 的缩放此前只有 `useReducedMotion()`
+  这一层 JS 判断(高光图层有 `motion-reduce:hidden`,缩放没有对应的 CSS 兜底)。
+  加了 `motion-reduce:transform-none!`——**必须带 `!`**,因为 framer-motion 把
+  scale 写成内联 style,普通类名的优先级压不过内联样式。这样以后就算有人加了
+  一个忘记判断 `reduceMotion` 的 transform,CSS 这层也会兜住。
+- **`SubmitProgressBar` 复用到订票流程风险最高的两个按钮**:此前"确认选座"和
+  "去支付"都只有按钮文字切换("提交中…"/"正在跳转到支付页面…"),是全站反馈
+  最弱的一档,却恰好是风险最高的两次点击——前者要过后端"数据库预检查 + Redis
+  原子加锁"两层并发校验(见 Phase 5),409 抢座失败是设计内的正常分支;后者要
+  真的发一次 `POST /bookings/{id}/checkout` 建 Stripe session 再跳转,网络延迟
+  期间用户只能盯着一个改了字的按钮。两处都复用登录/注册表单已有的
+  `SubmitProgressBar`,没有新造组件。
+  - **`SelectionSummaryBar` 不需要额外加 `relative`**——方案文档里当时写的是
+    "需要给它加 `relative` 才能让 `absolute` 定位生效",这条**是错的,实施时
+    纠正了**:那个容器已经是 `fixed`,而 `position: fixed` 本身就是定位元素、
+    会为 `absolute` 子元素建立包含块。实测确认进度条渲染成 1440×2px、贴在
+    结算栏顶边,容器 `position` 仍是 `fixed`。
+  - `BookingConfirmation` 那条放在 `GlassCard` 内部(落在 `GlassCard` 自己那层
+    `<div className="relative">` 里),因此会被卡片的 `p-8` 内边距缩进——这和
+    登录/注册的进度条被 `Card` 内边距缩进是同一种视觉处理,两处读起来是同一个
+    模式,不是两套。
+- **选座页三态切换补上过渡动效**:`booking` / `expired` / 座位网格三个分支此前
+  是纯 React 条件渲染的早返回,一次 `setState` 后整屏内容同帧替换——这是顾客端
+  最后一处硬切,而且正好落在用户最需要确认"系统跟上了我的操作"的时刻(提交
+  成功、持有到期)。它们共享同一个路由,所以 `PageTransition`(按 pathname 分
+  key)根本看不到这次切换。改成一个 `AnimatePresence mode="wait"`,用
+  `booking ? "confirmation" : expired ? "expired" : "selecting"` 做 key,复用
+  `lib/motion.ts` 的 `EASE_APPLE` 和既有的 `useReducedMotion()` 降级写法。
+  - **只做 opacity,刻意不做 y 位移**——这不是偷懒,是一个真实的 CSS 约束:
+    座位网格里的 `SelectionSummaryBar` 是 `position: fixed`,而**带 transform 的
+    祖先元素会成为其 fixed 子孙的包含块**,一旦这层 wrapper 动 y,那条结算栏在
+    过渡期间就会改为相对这个 wrapper 定位而不是视口。实测复核过:往返切换之后
+    结算栏 `bottom` 仍等于视口高度(900)、宽度仍是满宽 1440,且从结算栏往上
+    遍历到根节点**没有任何祖先带 transform**(`ancestorTransforms: []`)。
+    交叉淡入淡出对"原地换屏"本来也比方向性滑动更贴切——后者会暗示一次并不存在
+    的导航。
+- **`GlassCard` 新增 `interactive` prop(`whileTap:{scale:0.98}`),opt-in 不是
+  默认**:鼠标按下到路由真正跳转之间此前没有任何"点击已被接收"的即时信号,要等
+  `PageTransition` 触发才有反馈。但**没有把 `whileTap` 全局铺开**——全站大多数
+  `GlassCard` 是静态卡面(电影详情信息卡、倒计时确认卡、电子票、选座过期提示),
+  一张按下去会缩小的卡片读起来就是"这里能点",对点不动的卡片来说是假的可供性。
+  只有本身就是链接/按钮的两处(`MovieCard`、`ShowtimeList` 场次胶囊)显式传
+  `interactive`。实测确认:可点击卡片按下时 `scaleX` 到 0.98,静态卡片按下时
+  维持在 1.02(那是它的 hover 值)不发生按压缩放。
+- **验证方式**:每一项都用 Playwright 在 `reducedMotion: 'no-preference'` 和
+  `'reduce'` 两种上下文下各跑一遍,而且**不只截图,还直接读 `getComputedStyle`
+  的实测值**(transform 矩阵、过渡期间采样到的分数 opacity、进度条的
+  `getBoundingClientRect()`),避免"截图上看着对"但实际降级没生效。三态过渡这项
+  的降级证据是:正常动效下过渡期间采样到 27 个互不相同的分数 opacity 值(说明
+  确实在渐变),开启 reduced motion 后一个分数值都采不到(说明是瞬时切换、
+  duration 归零)。`npm run build` / `npm run lint` 跑过,干净。
+- **已知遗留(本次没做,不是遗漏)**:方案文档第 5 节里优先级最低的两项——
+  座位按钮的轻量 hover 缩放、`SelectionSummaryBar` 文案的交叉淡入——没有实施,
+  它们是锦上添花项,不做也不算缺陷。
+
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
 - 评价评分

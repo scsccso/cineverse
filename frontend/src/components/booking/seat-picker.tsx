@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useAuth } from "@/lib/auth/auth-context";
 import { ApiError } from "@/lib/api/client";
 import { getShowtimeSeats } from "@/lib/api/showtimes";
@@ -12,6 +13,8 @@ import { BookingConfirmation } from "@/components/booking/booking-confirmation";
 import { GlassCard } from "@/components/glass/glass-card";
 import { Button } from "@/components/ui/button";
 import { AnimatedFormBanner } from "@/components/motion/animated-form-banner";
+import { SubmitProgressBar } from "@/components/motion/submit-progress-bar";
+import { EASE_APPLE } from "@/lib/motion";
 
 const POLL_INTERVAL_MS = 4000;
 /** How long a just-cleared "someone else took your seat" notice stays on screen. */
@@ -43,6 +46,7 @@ export function SeatPicker({
 }: SeatPickerProps) {
   const { status, callAuthorized } = useAuth();
   const router = useRouter();
+  const reduceMotion = useReducedMotion();
 
   const [seatData, setSeatData] = useState(initialSeatData);
   const [selectedSeatIds, setSelectedSeatIds] = useState<Set<string>>(new Set());
@@ -244,66 +248,84 @@ export function SeatPicker({
     }
   }
 
-  if (booking) {
-    return (
-      <BookingConfirmation
-        booking={booking}
-        movieTitle={movieTitle}
-        movieBackdropUrl={movieBackdropUrl}
-        onExpire={handleExpire}
-        onCancel={handleCancel}
-        isCancelling={isCancelling}
-        onCheckout={handleCheckout}
-        isCheckingOut={isCheckingOut}
-        checkoutError={checkoutError}
-      />
-    );
-  }
-
-  if (expired) {
-    return (
-      <GlassCard className="mx-auto max-w-lg p-8 text-center">
-        <h2 className="font-display text-xl font-semibold">选座已过期</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          5 分钟持有时间已到,座位已释放给其他用户。请返回重新选座。
-        </p>
-        <Button className="mt-6 h-11 w-full" onClick={handleReturnToSelection}>
-          返回重新选座
-        </Button>
-      </GlassCard>
-    );
-  }
+  // These three screens share one route and swap on local state, so
+  // PageTransition — which keys off pathname — never sees them. Until now
+  // they replaced each other in a single frame: the last hard cut left in
+  // the customer flow, landing exactly where the user most needs to see the
+  // system keep up (submit succeeded, or the hold ran out).
+  //
+  // Opacity only, deliberately no y-offset. The seat grid's
+  // SelectionSummaryBar is `position: fixed`, and a transformed ancestor
+  // becomes the containing block for its fixed descendants — animating y
+  // here would re-anchor that bar to this wrapper mid-transition instead of
+  // the viewport. A crossfade is also the truer read for an in-place swap
+  // than a directional slide, which implies navigation that isn't happening.
+  const screen = booking ? "confirmation" : expired ? "expired" : "selecting";
 
   return (
-    <div className="pb-32">
-      <div className="mb-6 text-center">
-        <p className="text-sm text-muted-foreground">{movieTitle}</p>
-        <p className="mt-1 font-mono text-xs text-muted-foreground">
-          {showDate} · {showTime} · {hallLabel}
-        </p>
-      </div>
+    <AnimatePresence mode="wait" initial={false}>
+      <motion.div
+        key={screen}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: reduceMotion ? 0 : 0.18, ease: EASE_APPLE }}
+      >
+        {booking ? (
+          <BookingConfirmation
+            booking={booking}
+            movieTitle={movieTitle}
+            movieBackdropUrl={movieBackdropUrl}
+            onExpire={handleExpire}
+            onCancel={handleCancel}
+            isCancelling={isCancelling}
+            onCheckout={handleCheckout}
+            isCheckingOut={isCheckingOut}
+            checkoutError={checkoutError}
+          />
+        ) : expired ? (
+          <GlassCard className="mx-auto max-w-lg p-8 text-center">
+            <h2 className="font-display text-xl font-semibold">选座已过期</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              5 分钟持有时间已到,座位已释放给其他用户。请返回重新选座。
+            </p>
+            <Button className="mt-6 h-11 w-full" onClick={handleReturnToSelection}>
+              返回重新选座
+            </Button>
+          </GlassCard>
+        ) : (
+          <div className="pb-32">
+            <div className="mb-6 text-center">
+              <p className="text-sm text-muted-foreground">{movieTitle}</p>
+              <p className="mt-1 font-mono text-xs text-muted-foreground">
+                {showDate} · {showTime} · {hallLabel}
+              </p>
+            </div>
 
-      <div className="mx-auto mb-4 max-w-lg space-y-2">
-        <AnimatedFormBanner message={errorMessage} variant="destructive" />
-        <AnimatedFormBanner message={notice} variant="destructive" />
-      </div>
+            <div className="mx-auto mb-4 max-w-lg space-y-2">
+              <AnimatedFormBanner message={errorMessage} variant="destructive" />
+              <AnimatedFormBanner message={notice} variant="destructive" />
+            </div>
 
-      <SeatMap
-        hallName={hallLabel}
-        totalColumns={seatData.totalColumns}
-        seats={seatData.seats}
-        selectedSeatIds={selectedSeatIds}
-        onToggleSeat={toggleSeat}
-      />
+            <SeatMap
+              hallName={hallLabel}
+              totalColumns={seatData.totalColumns}
+              seats={seatData.seats}
+              selectedSeatIds={selectedSeatIds}
+              onToggleSeat={toggleSeat}
+            />
 
-      <SelectionSummaryBar
-        selectedSeats={selectedSeats}
-        totalPrice={totalPrice}
-        onConfirm={handleConfirm}
-        disabled={status === "loading"}
-        isSubmitting={isSubmitting}
-      />
-    </div>
+            <SelectionSummaryBar
+              selectedSeats={selectedSeats}
+              totalPrice={totalPrice}
+              onConfirm={handleConfirm}
+              disabled={status === "loading"}
+              isSubmitting={isSubmitting}
+            />
+          </div>
+        )}
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
@@ -322,6 +344,15 @@ function SelectionSummaryBar({
 }) {
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t border-glass-border bg-background/85 backdrop-blur-xl">
+      {/* Same submit feedback the login/register forms get. Confirming seats
+          runs the backend's two-layer concurrency check (DB pre-check, then
+          the atomic Redis lock per seat — see CLAUDE.md Phase 5), so a 409
+          losing the race is a normal, designed-for branch and the request is
+          not always instant; a button label swapping to "提交中…" was the
+          weakest feedback in the app on its riskiest click. No `relative`
+          needed on the parent: it is already `fixed`, which establishes the
+          containing block this `absolute` bar positions against. */}
+      <SubmitProgressBar active={isSubmitting} />
       <div className="mx-auto flex max-w-5xl flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           {selectedSeats.length === 0 ? (

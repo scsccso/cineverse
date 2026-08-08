@@ -22,7 +22,7 @@ export function ShowtimeList({ showtimes }: { showtimes: ShowtimeResponse[] }) {
           <div className="mt-3 flex flex-wrap gap-3">
             {dayShowtimes.map((showtime) => (
               <Link key={showtime.id} href={`/showtimes/${showtime.id}`}>
-                <GlassCard className="px-5 py-3">
+                <GlassCard interactive className="px-5 py-3">
                   <div className="font-mono text-lg font-medium">
                     {formatShowTime(showtime.startTime)}
                   </div>

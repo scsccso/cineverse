@@ -9,14 +9,14 @@ import type { MovieResponse } from "@/lib/api/types";
 export function MovieCard({ movie }: { movie: MovieResponse }) {
   return (
     <Link href={`/movies/${movie.id}`} className="block">
-      <GlassCard>
+      <GlassCard interactive>
         <div className="relative aspect-[2/3] w-full">
           <Image
             src={resolveMediaUrl(movie.posterUrl)}
             alt={movie.title}
             fill
             sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 220px"
-            className="object-cover transition-transform duration-300 group-hover:scale-105"
+            className="object-cover"
           />
         </div>
         <div className="space-y-1.5 p-4">

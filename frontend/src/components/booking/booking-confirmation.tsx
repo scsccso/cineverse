@@ -6,6 +6,7 @@ import { resolveMediaUrl } from "@/lib/api/client";
 import { GlassCard } from "@/components/glass/glass-card";
 import { Button } from "@/components/ui/button";
 import { AnimatedFormBanner } from "@/components/motion/animated-form-banner";
+import { SubmitProgressBar } from "@/components/motion/submit-progress-bar";
 import type { BookingResponse } from "@/lib/api/types";
 
 interface BookingConfirmationProps {
@@ -86,6 +87,13 @@ export function BookingConfirmation({
       <div className="absolute inset-0 bg-gradient-to-t from-background via-background/85 to-background/45" />
 
       <GlassCard className="relative z-10 max-w-lg p-8">
+        {/* "去支付" fires a real network call (POST /bookings/{id}/checkout
+            creates the Stripe session) before the redirect, so there is a
+            latency window where only the button label had changed. Sits
+            inside GlassCard's own inner `relative` wrapper, which insets it
+            by the card padding — the same treatment the login/register bars
+            get inside their Card, so the two read as one pattern. */}
+        <SubmitProgressBar active={isCheckingOut} />
         <p className="text-sm text-muted-foreground">选座成功,请在时间内完成支付</p>
         <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight">{movieTitle}</h2>
 
