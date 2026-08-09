@@ -21,7 +21,14 @@ export function ShowtimeList({ showtimes }: { showtimes: ShowtimeResponse[] }) {
           </h3>
           <div className="mt-3 flex flex-wrap gap-3">
             {dayShowtimes.map((showtime) => (
-              <Link key={showtime.id} href={`/showtimes/${showtime.id}`}>
+              // Straight to seat selection, skipping /showtimes/{id}. That
+              // page only re-displayed date/time/hall/price — every one of
+              // which is already on this capsule and repeated in the seat
+              // page's header — so it was a navigation step that carried no
+              // new information and required no decision. The route itself is
+              // deliberately kept (deep links still land somewhere sensible);
+              // only this entry point bypasses it.
+              <Link key={showtime.id} href={`/showtimes/${showtime.id}/seats`}>
                 <GlassCard interactive className="px-5 py-3">
                   <div className="font-mono text-lg font-medium">
                     {formatShowTime(showtime.startTime)}

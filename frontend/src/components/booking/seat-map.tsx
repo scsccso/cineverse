@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Heart, Lock } from "lucide-react";
+import { Check, Heart, Lock, type LucideIcon } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { SeatStatusEntry } from "@/lib/api/types";
@@ -36,6 +36,14 @@ export function SeatMap({
 
   return (
     <div className="space-y-6">
+      {/* Legend first: it's the key to the grid below, and a first-time user
+          reads top-down — printed underneath, it only helps someone who
+          already knew to go looking for it. Kept outside the scroll container
+          so it never scrolls out of view sideways on a wide hall; the screen
+          arc still sits directly above the seats, so the spatial cue is
+          unaffected. */}
+      <SeatLegend />
+
       {/* Horizontally scrollable so a hall wider than the viewport never
           squeezes seats below the 44px (h-11) touch-target minimum — the
           container scrolls instead of the seats shrinking. */}
@@ -70,8 +78,6 @@ export function SeatMap({
           </div>
         </div>
       </div>
-
-      <SeatLegend />
     </div>
   );
 }
@@ -176,22 +182,42 @@ function SeatButton({
   );
 }
 
+/**
+ * The swatches mirror both halves of each seat's encoding, border *and* icon
+ * (CLAUDE.md 1.5). They previously carried the border only — so the one cue
+ * that actually separates 使用中 from 已售出 for a colour-blind reader, the
+ * lock vs. the tick, was visible on the grid but missing from the key meant to
+ * decode it. 可选/已选 have no icon on the real seats either (they show the
+ * seat number), so they correctly have none here.
+ */
 function SeatLegend() {
-  const items = [
+  const items: { label: string; swatch: string; Icon?: LucideIcon; iconClass?: string }[] = [
     { label: "可选", swatch: "border border-glass-border bg-glass-surface" },
     { label: "已选", swatch: "border border-primary bg-primary/15" },
     {
       label: "使用中(暂时锁定)",
       swatch: "border border-dashed border-muted-foreground/30 bg-muted/20",
+      Icon: Lock,
+      iconClass: "text-muted-foreground/70",
     },
-    { label: "已售出", swatch: "border border-transparent bg-muted-foreground/25" },
+    {
+      label: "已售出",
+      swatch: "border border-transparent bg-muted-foreground/25",
+      Icon: Check,
+      iconClass: "text-background/70",
+    },
   ];
 
   return (
     <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
       {items.map((item) => (
         <div key={item.label} className="flex items-center gap-2">
-          <span className={cn("size-4 rounded", item.swatch)} aria-hidden />
+          <span
+            className={cn("flex size-5 items-center justify-center rounded", item.swatch)}
+            aria-hidden
+          >
+            {item.Icon && <item.Icon className={cn("size-3", item.iconClass)} />}
+          </span>
           {item.label}
         </div>
       ))}

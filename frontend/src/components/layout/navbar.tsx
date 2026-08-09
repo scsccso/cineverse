@@ -182,6 +182,18 @@ function AuthSection({ status, user, stacked = false }: AuthSectionProps) {
           管理后台
         </Link>
       )}
+      {/* Sits in the shared AuthSection, so it appears in the desktop row and
+          the mobile disclosure panel alike — the e-ticket must not be
+          reachable on one breakpoint only. */}
+      <Link
+        href="/bookings"
+        className={cn(
+          "flex text-sm text-muted-foreground hover:text-foreground",
+          stacked ? "h-11 items-center" : "items-center",
+        )}
+      >
+        我的订单
+      </Link>
       <Link
         href="/profile"
         className={cn(

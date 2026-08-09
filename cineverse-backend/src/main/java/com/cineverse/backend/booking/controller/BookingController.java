@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -53,6 +54,16 @@ public class BookingController {
             + "只有本人或 ADMIN 能取消")
     public void cancel(Authentication authentication, @PathVariable UUID id) {
         bookingService.cancel(currentUserId(authentication), isAdmin(authentication), id);
+    }
+
+    @GetMapping
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "查看我的订单列表", description = "当前登录用户自己的全部订单，按下单时间(created_at)倒序。"
+            + "**没有 ADMIN 越权分支**——ADMIN 调用这个接口同样只看到自己的订单，"
+            + "跨用户的经营数据属于 Phase 8 的 /api/v1/admin/reports/**，不从这里出。"
+            + "读取时对已过 expires_at 但仍是 PENDING 的订单批量做懒惰过期，规则与 GET /{id} 一致")
+    public List<BookingResponse> list(Authentication authentication) {
+        return bookingService.listForUser(currentUserId(authentication));
     }
 
     @GetMapping("/{id}")

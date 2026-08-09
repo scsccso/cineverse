@@ -173,8 +173,11 @@ export default function BookingConfirmedPage() {
             </div>
           )}
 
-          <Link href="/profile" className={cn(buttonVariants(), "mt-6 h-11 w-full")}>
-            查看我的账号
+          {/* Points at the order list, not /profile: this button used to
+              promise "your account" and land on a page with no trace of the
+              ticket just purchased — the one dead end in the whole flow. */}
+          <Link href="/bookings" className={cn(buttonVariants(), "mt-6 h-11 w-full")}>
+            查看我的订单
           </Link>
         </GlassCard>
       </FadeIn>

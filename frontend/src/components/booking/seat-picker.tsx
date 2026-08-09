@@ -295,10 +295,14 @@ export function SeatPicker({
           </GlassCard>
         ) : (
           <div className="pb-32">
+            {/* Per-seat price belongs here now that the showtime-confirm page
+                is bypassed (see showtime-list.tsx): it was the one figure that
+                page showed which this header didn't, and without it the price
+                stays invisible until the first seat is picked. */}
             <div className="mb-6 text-center">
               <p className="text-sm text-muted-foreground">{movieTitle}</p>
               <p className="mt-1 font-mono text-xs text-muted-foreground">
-                {showDate} · {showTime} · {hallLabel}
+                {showDate} · {showTime} · {hallLabel} · RM {pricePerSeat.toFixed(2)}/座
               </p>
             </div>
 

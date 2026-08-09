@@ -1,5 +1,6 @@
 package com.cineverse.backend.booking.integration;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -159,9 +160,85 @@ class BookingFlowIntegrationTest {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void anonymousCannotListBookings() throws Exception {
+        mockMvc.perform(get("/api/v1/bookings"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void listReturnsOnlyTheCallersOwnBookingsNewestFirst() throws Exception {
+        String adminToken = loginAsAdmin();
+        String ownerToken = registerAndLoginCustomer();
+        String strangerToken = registerAndLoginCustomer();
+        UUID showtimeId = createShowtime(adminToken, "2026-10-04T10:00:00Z");
+
+        // Sequential HTTP round-trips, so created_at (microsecond precision)
+        // strictly increases — the newest-first assertion below isn't racing.
+        UUID firstBookingId = createBooking(ownerToken, showtimeId, seatIdAt(0));
+        UUID secondBookingId = createBooking(ownerToken, showtimeId, seatIdAt(1));
+        UUID strangerBookingId = createBooking(strangerToken, showtimeId, seatIdAt(2));
+
+        mockMvc.perform(get("/api/v1/bookings").header(HttpHeaders.AUTHORIZATION, "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").value(secondBookingId.toString()))
+                .andExpect(jsonPath("$[1].id").value(firstBookingId.toString()))
+                .andExpect(jsonPath("$[0].showtime.id").value(showtimeId.toString()))
+                .andExpect(jsonPath("$[0].seats.length()").value(1));
+
+        mockMvc.perform(get("/api/v1/bookings").header(HttpHeaders.AUTHORIZATION, "Bearer " + strangerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(strangerBookingId.toString()));
+    }
+
+    /**
+     * The list endpoint has no admin override on purpose — unlike GET
+     * /bookings/{id}, where an admin can look up a specific customer's booking
+     * for support. An unfiltered list would quietly become an all-customers
+     * order dump; cross-user data belongs to the Phase 8 admin report
+     * endpoints instead.
+     */
+    @Test
+    void adminListingSeesOnlyItsOwnBookingsNotEveryCustomers() throws Exception {
+        String adminToken = loginAsAdmin();
+        String customerToken = registerAndLoginCustomer();
+        UUID showtimeId = createShowtime(adminToken, "2026-10-05T10:00:00Z");
+
+        UUID customerBookingId = createBooking(customerToken, showtimeId, seatIdAt(0));
+
+        MvcResult adminList = mockMvc.perform(get("/api/v1/bookings")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        assertThat(adminList.getResponse().getContentAsString())
+                .doesNotContain(customerBookingId.toString());
+
+        // ...while the per-id support lookup still works for an admin.
+        mockMvc.perform(get("/api/v1/bookings/{id}", customerBookingId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk());
+    }
+
+    private UUID createBooking(String accessToken, UUID showtimeId, UUID seatId) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v1/bookings")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateBookingRequest(showtimeId, List.of(seatId)))))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return readId(result);
+    }
+
     private UUID firstSeatId() {
+        return seatIdAt(0);
+    }
+
+    private UUID seatIdAt(int index) {
         return seatRepository.findByHallIdOrderByRowLabelAscColumnNumberAsc(UUID.fromString(SEEDED_HALL_ID))
-                .get(0)
+                .get(index)
                 .getId();
     }
 
