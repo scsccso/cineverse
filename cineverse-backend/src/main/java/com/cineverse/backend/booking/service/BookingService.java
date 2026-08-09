@@ -192,6 +192,56 @@ public class BookingService {
     }
 
     /**
+     * The caller's own order history, newest first — the only way back to a
+     * confirmed e-ticket once the post-payment redirect URL is gone.
+     *
+     * <p>Deliberately has no admin bypass, unlike {@link #getById}: there the
+     * admin override serves support ("look up this customer's booking"), but
+     * an unfiltered list would quietly become an all-customers order dump,
+     * which is a reporting concern already served by the Phase 8 admin report
+     * endpoints. So this is strictly self-scoped for every role, and the
+     * scoping lives in the query's where-clause rather than in a filter applied
+     * after loading.
+     *
+     * <p>Not readOnly, for the same reason getShowtimeSeats isn't: the same
+     * lazy-expiry rule every other read path applies (see
+     * {@link #loadWithLazyExpiry}) is applied here too, in one batch rather
+     * than per row, so opening the order list also settles any hold that
+     * elapsed while nobody was looking.
+     */
+    @Transactional
+    public List<BookingResponse> listForUser(UUID userId) {
+        List<Booking> bookings = bookingRepository.findAllByUserIdNewestFirst(userId);
+        if (bookings.isEmpty()) {
+            // Short-circuit: skips both an "in ()" seat query and the flush below.
+            return List.of();
+        }
+
+        Instant now = Instant.now();
+        List<Booking> newlyExpired = bookings.stream()
+                .filter(booking ->
+                        BookingStateMachine.shouldLazilyExpire(booking.getStatus(), booking.getExpiresAt(), now))
+                .toList();
+        if (!newlyExpired.isEmpty()) {
+            newlyExpired.forEach(Booking::markExpired);
+            bookingRepository.saveAllAndFlush(newlyExpired);
+            newlyExpired.forEach(booking -> eventPublisher.publishEvent(new BookingReleasedEvent(booking.getId())));
+        }
+
+        Map<UUID, List<BookingSeat>> seatsByBookingId = bookingSeatRepository
+                .findByBookingIdInWithSeat(bookings.stream().map(Booking::getId).toList())
+                .stream()
+                // getBooking() is a lazy proxy, but getId() reads the foreign
+                // key already in hand — no extra query per row.
+                .collect(Collectors.groupingBy(bookingSeat -> bookingSeat.getBooking().getId()));
+
+        return bookings.stream()
+                .map(booking ->
+                        bookingMapper.toResponse(booking, seatsByBookingId.getOrDefault(booking.getId(), List.of())))
+                .toList();
+    }
+
+    /**
      * Phase 6 checkout entry point: same lazy-expiry rule as every other
      * read path, plus a strict owner check (no admin bypass — paying is
      * inherently a per-user action, unlike view/cancel) and a PENDING-only

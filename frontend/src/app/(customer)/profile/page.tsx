@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
 import { ApiError } from "@/lib/api/client";
@@ -11,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { FadeIn } from "@/components/motion/fade-in";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 function initials(fullName: string) {
   return fullName
@@ -135,7 +138,10 @@ export default function ProfilePage() {
               <dd>{formatJoinedDate(profile.createdAt)}</dd>
             </dl>
 
-            <div className="mt-8 flex justify-end">
+            <div className="mt-8 flex items-center justify-between gap-4">
+              <Link href="/bookings" className={cn(buttonVariants(), "h-11 px-6")}>
+                我的订单
+              </Link>
               <LogoutButton />
             </div>
           </CardContent>

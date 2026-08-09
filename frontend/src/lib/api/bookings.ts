@@ -20,6 +20,13 @@ export function cancelBooking(accessToken: string, id: string): Promise<void> {
   });
 }
 
+/** The caller's own orders, newest first. Strictly self-scoped server-side — an ADMIN token gets its own orders too, not everyone's. */
+export function listBookings(accessToken: string): Promise<BookingResponse[]> {
+  return apiFetch<BookingResponse[]>("/api/v1/bookings", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 export function getBooking(accessToken: string, id: string): Promise<BookingResponse> {
   return apiFetch<BookingResponse>(`/api/v1/bookings/${id}`, {
     headers: { Authorization: `Bearer ${accessToken}` },

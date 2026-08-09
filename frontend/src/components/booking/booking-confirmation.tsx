@@ -66,6 +66,24 @@ export function BookingConfirmation({
   const remainingMs = Math.max(0, expiresAtMs - now);
   const percentRemaining = Math.min(100, Math.max(0, (remainingMs / initialRemainingMs) * 100));
 
+  /**
+   * The hold deadline as a wall-clock time. Deliberately NOT formatted with
+   * lib/format's cinema timezone the way showtimes are: a showtime is an event
+   * at the cinema, but this is a deadline the customer checks against the clock
+   * on their own phone — especially once they're on Stripe's page, where our
+   * countdown is no longer on screen. So it follows the device's timezone.
+   *
+   * No hydration concern despite the client/server split: this component only
+   * mounts after `booking` state exists, which is set by a user action or the
+   * resume effect — never during the server render.
+   */
+  const deadlineLabel = useMemo(
+    () =>
+      new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })
+        .format(new Date(expiresAtMs)),
+    [expiresAtMs],
+  );
+
   return (
     <div className="relative flex min-h-[calc(100vh-4rem)] items-center justify-center overflow-hidden">
       {/* Same backdrop treatment as the showtime-confirm page (design-
@@ -108,7 +126,7 @@ export function BookingConfirmation({
             {formatCountdown(remainingMs)}
           </p>
           <p className="text-center text-xs text-muted-foreground">
-            请在 5 分钟内完成支付,否则座位将自动释放
+            请在 <span className="font-mono text-foreground">{deadlineLabel}</span> 前完成支付,否则座位将自动释放
           </p>
         </div>
 
@@ -132,8 +150,19 @@ export function BookingConfirmation({
           <AnimatedFormBanner message={checkoutError} variant="destructive" />
         </div>
 
+        {/* The one thing a first-timer can't discover on their own: the hold
+            keeps counting down on Stripe's page, where this timer isn't
+            visible. Stripe's own session minimum is 30 minutes while the seat
+            hold is 5 (CLAUDE.md Phase 6), so someone typing card details
+            slowly can pay for a seat that has already been released — the
+            ORPHANED_SUCCESS case. Stating the absolute time here means they
+            leave with something they can check against their phone clock. */}
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          支付页面由 Stripe 托管,期间倒计时不会暂停——请在{" "}
+          <span className="font-mono text-foreground">{deadlineLabel}</span> 前完成
+        </p>
         <Button
-          className="mt-6 h-11 w-full"
+          className="mt-2 h-11 w-full"
           disabled={isCheckingOut || isCancelling}
           onClick={onCheckout}
         >
