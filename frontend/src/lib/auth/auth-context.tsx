@@ -29,7 +29,7 @@ type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 interface AuthContextValue {
   status: AuthStatus;
   user: UserResponse | null;
-  login: (payload: LoginRequest) => Promise<void>;
+  login: (payload: LoginRequest) => Promise<AuthResponse>;
   register: (payload: RegisterRequest) => Promise<UserResponse>;
   logout: () => Promise<void>;
   /** Calls /api/v1/users/me, transparently refreshing the access token once on a 401. */
@@ -100,9 +100,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (payload: LoginRequest) => {
+    async (payload: LoginRequest): Promise<AuthResponse> => {
       const session = await loginUser(payload);
       applySession(session);
+      return session;
     },
     [applySession],
   );

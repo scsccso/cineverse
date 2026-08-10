@@ -1440,6 +1440,189 @@ editorial 管"视觉分量"、interaction 管"操作反馈",这一份管"流程�
 浏览器上下文、只靠登录 + Navbar 点击(不用任何记下来的 booking id)走到那张
 CONFIRMED 订单,确认二维码正常渲染。
 
+### Admin 用户管理(2026-08-11)
+
+新增 `GET/PATCH/DELETE /api/v1/admin/users`(分页查询/改角色/删除,仅 ADMIN)+
+`/admin/users` 前端页面。这批改动最初以 Antigravity(另一套 agentic 工具)跑出来
+的形式落地,落库前经过一次完整的人工复核——过程中发现日志里三条"已验证"的结论
+其实不成立,细节见下面几条,不是走个过场重复抄一遍原始日志。
+
+**新增 API**:
+
+- `GET /api/v1/admin/users?page=&size=`:分页查询全部用户,响应形状是标准的
+  Spring `Page<UserResponse>`(和 `GET /api/v1/movies` 同一套分页约定)。
+- `PATCH /api/v1/admin/users/{id}/role`:请求体 `{"role":"ADMIN"|"CUSTOMER"}`,
+  返回更新后的 `UserResponse`。**不能修改自己的角色**,命中会返回 409
+  (见下面"自我锁定"一节)。
+- `DELETE /api/v1/admin/users/{id}`:204 无内容。用户有订单记录时返回 409
+  (`BookingRepository.existsByUserId`,和 `MovieService.delete()`/
+  `ShowtimeService.delete()` 那套"先查存在性再删,不只靠 FK 报错兜底"的模式
+  一致,见 Phase 4 补充)。**不能删除自己的账号**,同样返回 409。
+
+**关键决定**:
+
+- **Controller 上没有 `@PreAuthorize`,方法级安全注解本来就不生效**:这个项目
+  从 Phase 0 起就没有开 `@EnableMethodSecurity`(全项目搜索确认过,不是这次顺手
+  漏配),ADMIN-only 的访问控制统一走 `SecurityConfig` 里的 URL 级
+  `.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")`——和 `ReportController`
+  (Phase 8)、`TicketController`(Phase 7)完全同一套模式。最初的实现在
+  `AdminUserController` 上加了一个 `@PreAuthorize("hasRole('ADMIN')")`,不会
+  报错也不会生效(纯粹的死代码,不是安全漏洞——URL 级规则已经在生效),但和
+  项目其余 admin 接口的写法不一致,已经去掉,不需要为它专门去开
+  `@EnableMethodSecurity`。
+- **自我锁定(self-lockout)防护是服务端强制的,不只是前端禁用按钮**:
+  `AdminUserService.updateUserRole`/`deleteUser` 都在最前面判断
+  `id.equals(callerId)`,命中直接 409,不查库、不产生副作用。最初的实现只在
+  `admin/users/page.tsx` 里把自己那一行的"切换角色"/"删除"按钮 `disabled`,
+  这只是 UI 提示,服务端完全没有对应校验——**用 curl 直接打
+  `PATCH .../{自己的id}/role` 复现过一次真实的自我降级**:唯一的种子 ADMIN
+  账号被成功改成 `CUSTOMER`,系统瞬间零 ADMIN,只能用 `docker exec ... psql`
+  直接改数据库把角色改回来,APP 内没有任何路径能恢复(没有别的 ADMIN 账号能
+  登进 `/admin/users` 把它改回去)。这不是一个边界情况,这是"唯一管理员"这个
+  MVP 现状(`V2__seed_admin.sql` 只插入了一个 ADMIN)下必然会撞上的真实事故
+  ——`Authentication` 已经是 Controller 方法签名里现成的参数(
+  `UUID.fromString(authentication.getName())`,和 `BookingController` 取
+  `currentUserId` 同一个模式),服务端加两行判断的成本远低于放着这个洞不管。
+- **ADMIN 反向隔离(Bug 3):没有做成 `(customer)/layout.tsx` 整层拦截,而是
+  精确加在会展示个人数据的两个页面上**——这是这次复核里推翻原方案、改动最大
+  的一处,完整记录见下面单独一节。
+- **`GET /api/v1/admin/users` 在验证过程中一度稳定返回 500**,根因不是这几个
+  新文件的代码本身有问题(`mvn clean compile` 之后这个接口和其余所有接口都
+  工作正常),而是当时一直开着的本地 `mvn spring-boot:run` 进程处在一个不一致
+  的增量编译状态——`target/classes` 里 `UserMapperImpl.class` 确实存在,
+  `mvn spring-boot:run` 却仍然报 "No qualifying bean of type UserMapper"
+  拒绝启动一次、又在另一次不完整重启后让这一个新端点单独 500(其余复用
+  `UserMapper` 的老端点如 `/users/me` 完全正常)。杀掉进程、跑一次
+  `mvn clean compile` 再重启后问题消失,之后再没复现。Sprint 3 的日志(见
+  `antigravity.md`)已经观察到 IDE 对 MapStruct 生成代码报红,但把结论定成
+  "纯 IDE 缓存问题,`mvn clean compile` 成功就说明代码没问题"——这个结论对
+  代码本身是对的,但不完整:它没有覆盖到"一个跑了很久、经历过多次增量
+  `spring-boot:run` 重启的进程,即使代码正确,也可能因为 Maven 增量编译状态
+  不一致而在运行时表现出编译期发现不了的 bean 装配错误"这个真实场景。
+  已经在 `docs/DEVELOPMENT.md` 补了一条对应的环境注意事项。
+- **CI 的 backend 检查一度真实地红过,根因和上面那次本地 500 完全无关,是一个
+  独立的、更实质的问题**:分支推上去之后 GitHub Actions 的 `mvn --batch-mode
+  --no-transfer-progress clean test` 失败,而这次复核此前只跑过
+  `mvn compile`/`mvn clean compile`,从没跑过全量 `mvn test`——这是本次复核
+  流程本身的一个盲区,`antigravity.md` 的验证记录同样只到 `mvn clean
+  compile` 为止,两边都没有跑测试套件,所以这个问题在落地前完全没被发现。
+  真正命中的是项目已有的一条架构治理测试
+  ——`TimestampedEntitySaveFlushRuleTest`(用 ArchUnit 扫描全部生产代码,
+  强制"任何 `@Entity` 带 `@CreationTimestamp`/`@UpdateTimestamp` 的字段,
+  存库必须用 `saveAndFlush()`/`saveAllAndFlush()`,不能用普通的
+  `save()`/`saveAll()`",因为 Hibernate 要到 flush 时才会真正填充这类
+  字段)——这条规则本身是从 Movie/Cinema/Hall 各自独立踩过同一个 bug 之后
+  加的护栏(见该测试类的类注释),`User` 实体的 `updatedAt` 正是
+  `@UpdateTimestamp`,而 `AdminUserService.updateUserRole` 原本调用的是
+  `userRepository.save(user)`——这是 Antigravity 原始代码里已经存在的问题,
+  不是这次新引入的,只是从没被跑过全量测试的环境验证到。修复是把这一处的
+  `save` 改成 `saveAndFlush`,一行改动。
+- **补的单元测试第一次跑的时候,自己又踩了同一条规则一次**:
+  `AdminUserServiceTest` 里原本写了一行
+  `verify(userRepository, never()).save(any())` 想反向锁定"确实没调用过
+  `save()`,而是叫 `saveAndFlush()`",结果这一行本身在字节码层面就是一次对
+  `UserRepository.save(..)` 的调用(Mockito 的 `verify()` 就是这么实现的),
+  而 `TimestampedEntitySaveFlushRuleTest` 用 `ClassFileImporter()
+  .importPackages("com.cineverse.backend")` 扫描的是整个包前缀,并不区分
+  生产代码和测试代码(`target/test-classes` 同样在扫描范围内)——于是这条
+  测试代码本身把测试跑红了第二次。删掉这一行 `never()` 断言即可,理由是
+  "不写 `save()` 这件事本来就已经被 `TimestampedEntitySaveFlushRuleTest`
+  在生产代码层面强制锁定了,不需要在这个 service 测试里对同一件事再断言
+  一遍,而且这样断言反而会自己触发这条规则"。
+
+#### 单元测试覆盖:AdminUserService(Mockito)+ AdminUserFlowIntegrationTest(Testcontainers)
+
+自我锁定这条 409 校验此前完全没有测试覆盖(Antigravity 的原始交付里,
+`user` 包下没有任何测试文件)。补了两层,和 `TicketServiceTest` +
+`TicketFlowIntegrationTest`、`BookingServiceListTest` +
+`BookingFlowIntegrationTest` 这两组既有的"service 层 Mockito 快测 + 真实
+HTTP 流程慢测"配对是同一个模式,不是发明新的测试风格:
+
+- **`AdminUserServiceTest`**(Mockito,无需 Testcontainers,跑得快):覆盖
+  `updateUserRole`/`deleteUser` 各自的自我锁定分支(命中即 409,且
+  `verifyNoInteractions` 断言连 `UserRepository`/`BookingRepository` 都没碰
+  过,证明这个判断在任何查库动作之前就短路了,不是"查完了才拒绝"),以及
+  正常改角色、正常删除、目标用户不存在(404)、目标用户有订单记录时删除
+  被拒(409)几条主干逻辑。
+- **`AdminUserFlowIntegrationTest`**(Testcontainers 真实 Postgres,过完整的
+  Spring Security 过滤器链):Mockito 测试传的 `callerId` 是手工构造的参数,
+  没办法验证 `AdminUserController` 有没有正确地把 `Authentication` 解析成
+  "调用者自己的 id"这一步接线是不是对的——如果这里被改错(比如手滑传成了
+  路径变量而不是当前认证主体),`AdminUserServiceTest` 的每个用例依然会
+  全绿,但真实 HTTP 请求下的自我锁定漏洞完全不会被拦住。这个测试类直接用
+  `V2__seed_admin.sql` 播种的唯一 ADMIN 账号当"自己"去打真实的
+  `PATCH/DELETE .../admin/users/{id}`,复现的正是复核时手动用 curl 发现
+  的那个真实场景的形状(这个项目从来只播种一个 ADMIN,所以"ADMIN 改自己"
+  和"ADMIN 改唯一的另一个 ADMIN"在这里是同一件事)。断言不只停在状态码:
+  409 之后紧跟着再打一次 `GET /users/me`,确认角色/账号真的原封未动,不是
+  "响应报错但已经写库一半"。额外补了一条"改别人的角色/删别人的账号仍然
+  正常工作"的用例,因为这是 `AdminUserController` 第一次拿到集成测试覆盖,
+  之前连正常路径也没有任何自动化验证。
+
+#### ADMIN 反向隔离改成精确定位到具体页面,不是整个顾客端路由组
+
+最初的修复方式是把 `(customer)/layout.tsx` 从 Server Component 改成 Client
+Component,在 `useEffect` 里读 `status`/`user`,ADMIN 登录态下
+`router.replace("/admin/dashboard")`。用 Playwright 在跳转瞬间连续截帧复核后,
+发现这个方案有两个问题,一个是真实的数据泄露 bug,一个是这次复核过程中主动
+放弃、没有采纳的架构方向:
+
+- **确认存在闪烁,而且泄露的是真实数据,不只是布局跳动**:连续截帧显示
+  `/profile` 页面在跳转前完整渲染出了 ADMIN 账号自己的姓名、邮箱、用户 ID、
+  加入时间(不是骨架屏,是 `ProfilePage` 真正拿到 `fetchCurrentUser()` 结果
+  之后渲染的卡片),大约 100~300ms 之后才跳到 `/admin/dashboard`。根因是
+  `(customer)/layout.tsx` 无条件渲染 `children`,只在 `useEffect` 里事后发起
+  跳转——这和 `app/admin/layout.tsx` 的模式不对称:后者在确认角色之前**不
+  渲染** `children`,只渲染骨架屏,两者不是同一种"客户端拦截"。
+- **没有采纳"整层拦截"方向,即使改成正确的"先挂起再渲染"模式**:考虑过照抄
+  `admin/layout.tsx` 的模式,在 `(customer)/layout.tsx` 整层挂起渲染直到确认
+  "不是 ADMIN"。放弃的原因:`admin/layout.tsx` 能负担这个代价,是因为
+  `/admin/**` 下每个页面本来就需要登录态,天然要等一次异步校验;但
+  `(customer)/layout.tsx` 包着的绝大多数路由(首页、电影详情、场次列表、
+  登录/注册页)是**公开只读**的,今天硬刷新这些页面不等待任何鉴权状态就立即
+  渲染。整层挂起会让首页这类高频公开页面的每次硬导航都多等一次
+  `/api/v1/auth/refresh` 往返(哪怕是匿名访客,没有 cookie 也要等这次请求
+  失败才知道),用一个真实、影响面广的性能回退去防一个只在"ADMIN 手动输入
+  客户端 URL"这种低频场景才会出现的问题,不划算。此外后端本身也不认为
+  ADMIN 完全不该碰顾客端功能——`SecurityConfig` 里 `/api/v1/bookings/**`
+  是 `authenticated()`,不限角色,ADMIN 一样能创建/查看/取消自己的订单;
+  一个"ADMIN 绝不能停留在任何顾客端页面"的整层拦截和后端自己的权限模型是
+  矛盾的。
+- **最终方案:把 ADMIN 检查加在 `profile/page.tsx` 和 `bookings/page.tsx`
+  各自已有的鉴权 `useEffect` 里**,紧跟在原有的
+  `unauthenticated -> router.replace("/login")` 分支后面,检查
+  `user?.role === "ADMIN"` 就跳 `/admin/dashboard`,并且**在发起
+  `fetchCurrentUser()`/`callAuthorized(listBookings)` 之前** return——这样
+  真正会泄露个人数据的那次请求从未发出,页面在跳转完成前始终停在原有的
+  加载骨架屏上,和"未登录"分支复用同一套骨架屏,不需要新状态。这两个页面
+  本来就已经是"等 `authStatus` 落定,再决定渲染什么"的写法(`ProfilePage`/
+  `BookingsPage` 早在 F-2 就是这个模式),这次只是多加一个分支,不是新引入
+  一种模式。用 Playwright 复测过:即使故意用一个较慢(冷启动 Turbopack
+  编译)的场景把跳转窗口拉长到近 3 秒,截帧显示全程只有加载骨架屏,姓名/
+  邮箱/用户 ID/订单数据没有在任何一帧出现过。
+  `(customer)/layout.tsx` 改回了纯 Server Component(和 Phase 8 之前一致),
+  不再持有任何鉴权逻辑。
+- **`bookings/[id]/confirmed/page.tsx`(电子票页)刻意没有加同样的检查**:
+  `GET /api/v1/bookings/{id}` 在后端是"本人或 ADMIN 都能看"(`BookingController
+  .getById`,见 Phase 5),这是有意支持的客服场景——ADMIN 需要能替顾客核对
+  某一张具体的票。如果这个页面也做 ADMIN 反向拦截,会直接堵死这条已经存在
+  的合法路径。`bookings/page.tsx`(订单列表)不受这条限制,因为列表接口
+  本身对所有角色都只返回调用者自己的订单(F-2 已有决定,ADMIN 也不例外)
+  ——ADMIN 在这个列表页不会看到别人的订单,加不加反向拦截都不构成数据泄露,
+  加上纯粹是为了不让 ADMIN 停留在一个对他们没有实际意义的"我的订单"页面,
+  是 UX 层面的选择,不是安全要求。
+
+#### `AdminHeader` 的 `/admin/movies` 死链接:已移除,不新建页面
+
+Sprint 4 给 `AdminHeader` 加了 Dashboard/Movies/Users 三个导航链接,但只有
+`/admin/users`(这次一起交付)和已有的 `/admin/dashboard` 真实存在——
+`/admin/movies` 没有对应的 `page.tsx`,点击会落到 Next.js 的全局兜底 404。
+复核时先把这个问题原样报告、不擅自处理;拿到决定后处理方式是**移除这个导航
+项**,不是补一个电影管理页面——电影管理目前完全是后端接口驱动(Phase 2 的
+`/api/v1/movies/**`,ADMIN-only 的 CRUD 走 Swagger/curl,没有配套前端页面),
+给它单独建一个 admin CRUD 页面是比"移除一个死链接"大得多的工作量,不属于
+这次任务范围,以后要做再单独排期。
+
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
 - 评价评分

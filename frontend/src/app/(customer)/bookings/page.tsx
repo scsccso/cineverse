@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
  * the ticket itself is duplicated here.
  */
 export default function BookingsPage() {
-  const { status: authStatus, callAuthorized } = useAuth();
+  const { status: authStatus, user, callAuthorized } = useAuth();
   const router = useRouter();
   const [bookings, setBookings] = useState<BookingResponse[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -35,6 +35,17 @@ export default function BookingsPage() {
       // /profile uses: the definitive check is here, after the silent refresh
       // has actually resolved.
       router.replace("/login?from=/bookings");
+      return;
+    }
+
+    if (user?.role === "ADMIN") {
+      // ADMIN reverse-gate — see the matching check in profile/page.tsx and
+      // CLAUDE.md "Admin reverse-isolation" for why this lives per-page.
+      // listBookings() below is scoped server-side to the caller's own
+      // rows anyway (see BookingRepository.findAllByUserIdNewestFirst), so
+      // an ADMIN landing here isn't a data-leak risk the way /profile was —
+      // this redirect is purely to keep them in the admin shell.
+      router.replace("/admin/dashboard");
       return;
     }
 
@@ -52,7 +63,7 @@ export default function BookingsPage() {
     return () => {
       ignore = true;
     };
-  }, [authStatus, callAuthorized, router]);
+  }, [authStatus, user, callAuthorized, router]);
 
   return (
     <section className="mx-auto max-w-2xl px-6 py-16">

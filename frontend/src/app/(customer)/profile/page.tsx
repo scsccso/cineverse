@@ -52,7 +52,7 @@ function ProfileSkeleton() {
 }
 
 export default function ProfilePage() {
-  const { status: authStatus, fetchCurrentUser } = useAuth();
+  const { status: authStatus, user, fetchCurrentUser } = useAuth();
   const router = useRouter();
   const [profile, setProfile] = useState<UserResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -65,6 +65,19 @@ export default function ProfilePage() {
       // cookie's presence server-side; this is the definitive client-side
       // check after the silent refresh attempt has resolved.
       router.replace("/login");
+      return;
+    }
+
+    if (user?.role === "ADMIN") {
+      // ADMIN reverse-gate: this page shows the logged-in customer's own
+      // account details, which isn't a meaningful view for an ADMIN session.
+      // Checked before fetchCurrentUser() fires below, so no request for
+      // profile data (and no risk of it rendering) ever happens on this
+      // branch — `profile` stays null and the loading skeleton below keeps
+      // showing until the replace takes effect. See CLAUDE.md "Admin
+      // reverse-isolation" for why this lives per-page instead of in
+      // (customer)/layout.tsx.
+      router.replace("/admin/dashboard");
       return;
     }
 
@@ -88,7 +101,7 @@ export default function ProfilePage() {
     return () => {
       ignore = true;
     };
-  }, [authStatus, fetchCurrentUser, router]);
+  }, [authStatus, user, fetchCurrentUser, router]);
 
   if (authStatus === "loading" || (authStatus === "authenticated" && !profile && !loadError)) {
     return (

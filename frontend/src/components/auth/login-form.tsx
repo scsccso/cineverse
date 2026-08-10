@@ -35,8 +35,14 @@ export function LoginForm({ redirectTo = "/profile" }: LoginFormProps) {
   async function onSubmit(values: LoginFormValues) {
     setFormError(null);
     try {
-      await login(values);
-      router.push(redirectTo);
+      const session = await login(values);
+      // ADMIN users go directly to the admin shell — never land on a
+      // customer page after login, regardless of what ?from= says.
+      if (session.user.role === "ADMIN") {
+        router.push("/admin/dashboard");
+      } else {
+        router.push(redirectTo);
+      }
     } catch (error) {
       // 401 covers both "no such email" and "wrong password" — the backend
       // deliberately returns the same generic message for both so this UI
