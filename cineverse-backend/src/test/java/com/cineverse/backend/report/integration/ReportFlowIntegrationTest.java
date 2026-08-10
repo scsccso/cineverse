@@ -33,7 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -45,8 +45,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Phase 8 acceptance criteria against real Postgres + Redis (Testcontainers)
@@ -149,12 +149,12 @@ class ReportFlowIntegrationTest {
         JsonNode json = objectMapper.readTree(result.getResponse().getContentAsString());
         assertThat(json.get("buckets")).hasSize(1);
         JsonNode bucket = json.get("buckets").get(0);
-        assertThat(bucket.get("periodStart").asString()).isEqualTo(today.toString());
-        assertThat(new BigDecimal(bucket.get("revenue").asString())).isEqualByComparingTo("75.00");
+        assertThat(bucket.get("periodStart").asText()).isEqualTo(today.toString());
+        assertThat(new BigDecimal(bucket.get("revenue").asText())).isEqualByComparingTo("75.00");
         assertThat(bucket.get("bookingCount").asLong()).isEqualTo(2);
-        assertThat(new BigDecimal(json.get("totalRevenue").asString())).isEqualByComparingTo("75.00");
-        assertThat(new BigDecimal(json.get("pendingReconciliationAmount").asString())).isEqualByComparingTo("25.00");
-        assertThat(json.get("currency").asString()).isEqualTo(stripeProperties.currency());
+        assertThat(new BigDecimal(json.get("totalRevenue").asText())).isEqualByComparingTo("75.00");
+        assertThat(new BigDecimal(json.get("pendingReconciliationAmount").asText())).isEqualByComparingTo("25.00");
+        assertThat(json.get("currency").asText()).isEqualTo(stripeProperties.currency());
     }
 
     @Test
@@ -179,10 +179,10 @@ class ReportFlowIntegrationTest {
         JsonNode json = objectMapper.readTree(result.getResponse().getContentAsString());
         assertThat(json.get("buckets")).hasSize(3);
         for (JsonNode bucket : json.get("buckets")) {
-            assertThat(new BigDecimal(bucket.get("revenue").asString())).isEqualByComparingTo("0");
+            assertThat(new BigDecimal(bucket.get("revenue").asText())).isEqualByComparingTo("0");
             assertThat(bucket.get("bookingCount").asLong()).isEqualTo(0);
         }
-        assertThat(new BigDecimal(json.get("totalRevenue").asString())).isEqualByComparingTo("0");
+        assertThat(new BigDecimal(json.get("totalRevenue").asText())).isEqualByComparingTo("0");
     }
 
     @Test
@@ -209,7 +209,7 @@ class ReportFlowIntegrationTest {
         JsonNode json = objectMapper.readTree(result.getResponse().getContentAsString());
         assertThat(json.get("showtimes")).hasSize(1);
         JsonNode showtime = json.get("showtimes").get(0);
-        assertThat(showtime.get("showtimeId").asString()).isEqualTo(showtimeId.toString());
+        assertThat(showtime.get("showtimeId").asText()).isEqualTo(showtimeId.toString());
         assertThat(showtime.get("totalSeats").asLong()).isEqualTo(55);
         assertThat(showtime.get("bookedSeats").asLong()).isEqualTo(3);
         assertThat(showtime.get("occupancyRate").asDouble()).isCloseTo(3.0 / 55.0, offset(0.001));
@@ -395,7 +395,7 @@ class ReportFlowIntegrationTest {
                                 new LoginRequest("admin@cineverse.local", "Admin@12345"))))
                 .andExpect(status().isOk())
                 .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString()).get("accessToken").asString();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("accessToken").asText();
     }
 
     private String registerAndLoginCustomer() throws Exception {
@@ -413,11 +413,11 @@ class ReportFlowIntegrationTest {
                         .content(objectMapper.writeValueAsString(new LoginRequest(email, password))))
                 .andExpect(status().isOk())
                 .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString()).get("accessToken").asString();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("accessToken").asText();
     }
 
     private UUID readId(MvcResult result) throws Exception {
-        String id = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asString();
+        String id = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
         return UUID.fromString(id);
     }
 }

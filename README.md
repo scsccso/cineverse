@@ -20,10 +20,10 @@ CineVerse 同时是一个全栈工程能力的作品集项目:架构设计、高
 ## 技术栈
 
 ### 后端(`cineverse-backend/`)
-- Java 25 (LTS) + Spring Boot 4.1.x + Spring Security 7
+- Java 21 (LTS) + Spring Boot 3.5.15 + Spring Security 6.x(2026-08-11 从 Java 25 + Boot 4.1 降级,匹配招聘市场对"Java LTS + Spring Boot 3"的主流预期——完整理由与影响范围见 `CLAUDE.md`)
 - PostgreSQL 16 + Flyway
 - Redis 7(座位锁,Phase 5 接入;refresh token 撤销走的是数据库 `revoked` 字段,不经过 Redis)
-- Spring Data JPA + Hibernate + MapStruct
+- Spring Data JPA + Hibernate 6.6 + MapStruct
 - JWT(jjwt),BCrypt 密码加密;电子票编码(Phase 7)复用同一套 jjwt 签名机制
 - Stripe Checkout(测试模式,Phase 6 支付;webhook 签名验证 + 幂等确认)
 - OpenPDF(LGPL/MPL,Phase 8 报表 PDF 导出)
@@ -66,7 +66,7 @@ CineVerse/
 
 ### 前置条件
 
-- JDK 25(推荐 [Eclipse Temurin](https://adoptium.net/))+ Maven 3.9+
+- JDK 21(推荐 [Eclipse Temurin](https://adoptium.net/))+ Maven 3.9+
 - Node.js 20.9+ + npm
 - Docker + Docker Compose
 
