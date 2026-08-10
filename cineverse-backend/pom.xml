@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.0</version>
+        <version>3.5.15</version>
         <relativePath/>
     </parent>
 
@@ -19,10 +19,10 @@
     <description>CineVerse 电影院订票系统 - 后端服务</description>
 
     <properties>
-        <java.version>25</java.version>
+        <java.version>21</java.version>
         <mapstruct.version>1.6.3</mapstruct.version>
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
-        <springdoc.version>3.0.3</springdoc.version>
+        <springdoc.version>2.8.17</springdoc.version>
         <jjwt.version>0.13.0</jjwt.version>
         <archunit.version>1.4.2</archunit.version>
         <stripe.version>29.2.0</stripe.version>
@@ -47,13 +47,11 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Schema migration. Spring Boot 4 split Flyway autoconfiguration out
-             of spring-boot-autoconfigure into its own starter; flyway-core
-             itself still has to be declared separately. -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-flyway</artifactId>
-        </dependency>
+        <!-- Schema migration. Boot 3.x's Flyway autoconfiguration lives in
+             spring-boot-autoconfigure itself (no dedicated starter — that
+             split only happened in Boot 4's modularization); flyway-core is
+             a plain dependency and the autoconfig activates once it's on the
+             classpath. -->
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
@@ -139,16 +137,12 @@
         </dependency>
 
         <!-- Test -->
+        <!-- MockMvc/@AutoConfigureMockMvc support is bundled directly in this
+             starter on Boot 3.x — no separate webmvc-test module to add
+             (that split is Boot 4-only modularization). -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <!-- Spring Boot 4 modularization: MockMvc/@AutoConfigureMockMvc support
-             now lives in the starter's dedicated test module. -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -161,14 +155,17 @@
             <artifactId>spring-boot-testcontainers</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Boot 3.x's managed Testcontainers BOM still uses the pre-rename
+             (unprefixed) artifact ids — Boot 4's testcontainers-junit-jupiter/
+             testcontainers-postgresql naming doesn't exist on this line. -->
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers-postgresql</artifactId>
+            <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
         <!-- Architecture rule enforcement (e.g. "timestamped entities must be

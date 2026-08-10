@@ -22,15 +22,15 @@
 ### 后端
 | 组件 | 选型 | 备注 |
 |---|---|---|
-| 语言 | Java 25 (LTS) | 2025年9月发布的LTS,支持窗口最长 |
-| 框架 | Spring Boot 4.1.x | 基于 Spring Framework 7;**不要用 3.x 教程**,3.5 已于 2026-06-30 EOL |
-| 安全 | Spring Security 7 | 配合 Spring Framework 7 |
+| 语言 | Java 21 (LTS) | 2026-08-11 从 Java 25 降级,理由见第 3 节"技术栈降级"条目 |
+| 框架 | Spring Boot 3.5.15 | 基于 Spring Framework 6.2;3.x 线的最后一个次版本,已于 2026-06-30 OSS EOL——明知已 EOL 仍选它,原因见第 3 节"技术栈降级"条目 |
+| 安全 | Spring Security 6.x | 配合 Spring Framework 6.2 |
 | 数据库 | PostgreSQL 16+ | |
 | 迁移工具 | Flyway | Schema 版本化,面试时能讲清楚数据库变更管理 |
 | 缓存/分布式锁 | Redis 7.x | 座位锁 + refresh token 黑名单 |
-| ORM | Spring Data JPA + Hibernate | |
+| ORM | Spring Data JPA + Hibernate 6.6 | |
 | DTO映射 | MapStruct | 禁止 Entity 直接暴露给 Controller |
-| API文档 | springdoc-openapi | 自动生成 Swagger UI |
+| API文档 | springdoc-openapi 2.x | 自动生成 Swagger UI;2.x 线对应 Boot 3.x/Framework 6,3.x 线才是 Boot 4/Framework 7 |
 | 测试 | JUnit 5 + Testcontainers (Postgres, Redis) | 集成测试用真实容器,不用H2糊弄 |
 | 构建工具 | Maven | |
 | 容器化 | Docker + docker-compose(本地开发) | |
@@ -269,6 +269,10 @@ Glass)——`/admin/dashboard` 实际渲染出来是"暗色导航栏 + 浅色内
   `spring-boot-starter-flyway`;MockMvc 测试支持挪到
   `spring-boot-starter-webmvc-test`;默认 Jackson 版本变成 Jackson 3
   (`tools.jackson.*`,不是 `com.fasterxml.jackson.*`)。踩坑记录写进了对应模块的代码注释里。
+  **2026-08-11 更新**:项目已从这里描述的 Spring Boot 4.1/Java 25 降级到
+  Spring Boot 3.5.15/Java 21,这几条 Boot 4 专属的模块化细节不再适用于当前
+  代码——原样保留在这里是真实的项目历史(起步阶段确实是这样),不做事后
+  改写;完整的降级理由、影响范围、踩坑记录见第 3 节"技术栈降级"条目。
 
 ### Phase 1 — 用户管理(User Management)✅ 完成于 2026-08-01
 CI 曾因为一个真实的 flaky test bug 红过一次(access token 缺 `jti`,
@@ -1622,6 +1626,95 @@ Sprint 4 给 `AdminHeader` 加了 Dashboard/Movies/Users 三个导航链接,但�
 `/api/v1/movies/**`,ADMIN-only 的 CRUD 走 Swagger/curl,没有配套前端页面),
 给它单独建一个 admin CRUD 页面是比"移除一个死链接"大得多的工作量,不属于
 这次任务范围,以后要做再单独排期。
+
+### 技术栈降级:Java 25 + Spring Boot 4.1 → Java 21 LTS + Spring Boot 3.5.15(2026-08-11)
+
+**为什么**:纯粹是招聘市场匹配问题,不是技术栈本身有缺陷。Java 25(2025-09
+LTS)和 Spring Boot 4.1/Framework 7 在这个项目起步时(2026-08-01)是"能拿到
+的最新 LTS/最新大版本"这个默认假设下的合理选型,但作为求职作品集,面试官/
+招聘方筛简历和现场提问的参照系是市场上实际主流的版本,不是发布日期最新的
+版本——目前这个市场语境下"Java LTS"和"Spring Boot 3"的默认所指仍然是
+Java 17/21 和 Spring Boot 3.x,不是刚发布不久、生态和教程都还在追赶的
+Java 25/Boot 4。选 Java 21 而不是继续留在 25,或者反过来降到更老的 17,是
+因为 21 才是当前市场语境下的"新一代默认项",17 会显得刻意保守。
+
+**明知 Spring Boot 3.5.15 已经 OSS EOL(2026-06-30)仍然选它**:降级前查证
+过——Spring Boot 3.5 是 3.x 线的最后一个次版本,3.0~3.5 全部已经停止免费
+安全补丁供给,当前只有 4.0.x/4.1.x 还在维护窗口内,不存在"更新但仍在维护期
+的 3.x"这个选项。这个 trade-off 对一个不需要持续安全补丁供给的作品集项目
+可以接受:面试官/招聘方筛简历和交流时对齐的是"这人对 Spring Boot 3.x 这套
+体系熟不熟",不是"这个部署实例今天能不能收到安全补丁"。如果这个项目以后
+真的要长期在线上跑(不只是作品集展示),需要重新评估这个决定。
+
+**改动范围**(完整清单,不是摘要):
+
+- `pom.xml`:`spring-boot-starter-parent` 4.1.0 → 3.5.15;`java.version`
+  25 → 21;`springdoc.version` 3.0.3(配合 Framework 7)→ 2.8.17(配合
+  Framework 6);删除 `spring-boot-starter-flyway`(Boot 3.x 没有这个
+  starter,Flyway 自动配置内建在 `spring-boot-autoconfigure` 里,
+  `flyway-core`/`flyway-database-postgresql` 保留为普通依赖);删除
+  `spring-boot-starter-webmvc-test`(Boot 3.x 的 `spring-boot-starter-test`
+  本身就自带 MockMvc 支持,不需要单独的 starter)。`jjwt`/`archunit`/
+  `stripe-java`/`openpdf`/`mapstruct` 五个第三方库版本独立于 Boot,未改动。
+- **Testcontainers 依赖坐标改名**(静态审计没有覆盖到的一处,`mvn
+  dependency:resolve` 报错才发现):`org.testcontainers:testcontainers-
+  junit-jupiter`/`testcontainers-postgresql`(Boot 4.1 管理的 Testcontainers
+  2.x 命名)在 Boot 3.5.x 管理的 Testcontainers 1.21.x 上不存在,改回未加
+  前缀的 `org.testcontainers:junit-jupiter`/`postgresql`。
+- **`@AutoConfigureMockMvc` 包路径改回**(同样是编译报错才发现,静态审计
+  没查到):Boot 4 把这个注解挪到了新包
+  `org.springframework.boot.webmvc.test.autoconfigure`,Boot 3.x 上还在
+  `org.springframework.boot.test.autoconfigure.web.servlet`——10 个用
+  `@AutoConfigureMockMvc` 的集成测试类逐一改了 import。
+- **Jackson 3 → Jackson 2 namespace**:全仓库 `tools.jackson.databind.*` →
+  `com.fasterxml.jackson.databind.*`,12 个文件(2 个安全处理器
+  `RestAuthenticationEntryPoint`/`RestAccessDeniedHandler` + 10 个集成
+  测试)。`ReportFlowIntegrationTest` 里还额外用到了 Jackson 3 专属的
+  `JsonNode.asString()` 方法(Jackson 2 只有 `asText()`,同名方法在
+  Jackson 2 上不存在)——这一处是编译报错才发现的,静态审计当时只查了
+  `import`,没查到这种"两边包名一改就都能编译过,但个别方法签名其实不兼容"
+  的情况,一并改成了 `asText()`。
+- **Hibernate 7.1 → 6.6.53**、Jackson 2.21.4、Spring Security 6.5.11、
+  Spring Framework 6.2.19、Testcontainers 1.21.4——这些都是 Boot 3.5.15
+  的 BOM 自动管理的版本,没有手动指定。
+
+**验证方式,不是只跑通编译**:`mvn clean test` 全量跑过(Docker 本地已有
+Testcontainers 需要的环境),**144/144 全部通过**,和降级前(Java 25/Boot
+4.1 下)的基线完全一致,没有任何测试因为这次降级需要放宽断言或删除。重点
+盯过的两处(降级前评估为"低风险但没有绝对把握"的点)都在真实 Hibernate
+6.6/Jackson 2 环境下验证通过:`ShowtimeAdminFlowIntegrationTest` 里对
+`startTime`/`endTime` 的精确 ISO-8601 字符串断言,以及全仓库所有对
+`createdAt`/`updatedAt` 的断言(验证 `@CreationTimestamp`/`@UpdateTimestamp`
+"只在 flush 时才真正填充"这条 Hibernate 行为在 6.6 和 7.1 上一致,
+`TimestampedEntitySaveFlushRuleTest` 这条 ArchUnit 护栏因此不需要任何调整
+就继续有效)。
+
+**本机没有装 JDK 21,测试是在 JDK 25 运行时上跑的**——`mvn` 用的是本机
+`JAVA_HOME`(JDK 25),`java.version=21` 只让 `maven-compiler-plugin` 用
+`--release 21` 编译出 Java 21 语言级别/字节码版本的 class 文件,但实际
+执行这些 class 文件的仍然是 JDK 25 的 JVM(新版 JVM 向下兼容旧版本
+bytecode,这是可行的,但不完全等同于在真实 JDK 21 运行时上跑过)。这不是
+回避,是如实记录一个还没有闭环的验证缺口——如果要百分百确认在 JDK 21
+运行时下行为一致,需要在本机装一个 JDK 21 发行版(比如 Eclipse Temurin)
+重新跑一次 `mvn clean test`,这一步留给你自己决定要不要做,降级本身没有
+去动系统级 JDK 安装。
+
+**降级过程中的一段插曲,值得记录**:动手改代码前查过 `git log`,发现本地
+`main` 落后 `origin/main` 恰好 1 个 commit(`d8cc64b`,"fix: admin user
+management data leak, self-lockout guard, and CI compliance"),而这个
+commit 修的问题(`AdminUserService.updateUserRole` 用 `save()` 而不是
+`saveAndFlush()`,撞上 `TimestampedEntitySaveFlushRuleTest`)恰好在第一次
+跑 `mvn test` 时被独立发现——逐个 diff 之后确认:当时本地未提交的
+`AdminUserController.java`/`AdminUserService.java`/`UpdateUserRoleRequest.java`
+等一批文件,是这个已经合并的 commit 修复之前的旧草稿(Antigravity 的原始
+交付),其余几个重叠文件(`BookingRepository.java`、`login-form.tsx`、
+`auth-context.tsx` 等)则和 `origin/main` 字节级相同。按"先复核旧草稿是否
+被新 commit 完全覆盖、确认后才丢弃"的顺序处理:删除本地这几份旧草稿、
+`git pull origin main` 干净 fast-forward、在新拉下来的
+`AdminUserFlowIntegrationTest.java` 里补了同样的 Jackson 3/
+`@AutoConfigureMockMvc` 包名修复(它也是在 Boot 4.1 环境下写的),之后
+`mvn test` 才第一次真正跑到 144/144 全绿。这次降级的改动本身和这个 commit
+触碰的文件完全不重叠,过程中没有产生任何合并冲突。
 
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
