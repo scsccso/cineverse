@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
-import { Clapperboard, ArrowLeft } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Clapperboard, ArrowLeft, LayoutDashboard, Film, Users } from "lucide-react";
 import { LogoutButton } from "@/components/auth/logout-button";
 import type { UserResponse } from "@/lib/api/types";
 
@@ -13,10 +16,18 @@ import type { UserResponse } from "@/lib/api/types";
  * this Phase.
  */
 export function AdminHeader({ user }: { user: UserResponse | null }) {
+  const pathname = usePathname();
+
+  const navItems = [
+    { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/admin/movies", label: "Movies", icon: Film },
+    { href: "/admin/users", label: "Users", icon: Users },
+  ];
+
   return (
     <header className="border-b border-border bg-card">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-6">
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-8">
           <Link
             href="/admin/dashboard"
             className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground"
@@ -25,17 +36,39 @@ export function AdminHeader({ user }: { user: UserResponse | null }) {
             Cine<span className="text-primary">Verse</span>
             <span className="hidden text-sm font-normal text-muted-foreground sm:inline">管理后台</span>
           </Link>
+
+          <nav className="hidden items-center gap-1 md:flex" aria-label="后台主导航">
+            {navItems.map((item) => {
+              const isActive = pathname.startsWith(item.href);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors ${
+                    isActive
+                      ? "bg-secondary text-secondary-foreground"
+                      : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                  }`}
+                >
+                  <Icon className="size-4" aria-hidden />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+
+        <div className="flex items-center gap-3">
           <Link
             href="/"
             aria-label="返回前台"
-            className="flex h-11 items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            className="flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary/50 hover:text-foreground"
           >
             <ArrowLeft className="size-4" aria-hidden />
             <span className="hidden sm:inline">返回前台</span>
           </Link>
-        </div>
-
-        <div className="flex items-center gap-3">
           {user && (
             <span className="hidden text-sm text-muted-foreground sm:inline">{user.fullName}</span>
           )}

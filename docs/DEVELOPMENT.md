@@ -22,6 +22,17 @@
   `V9__bookings.sql`)不会自动生效,`flyway_schema_history` 表停在旧版本,
   `GET .../seats` 这类新接口会直接 500;重启一次后端进程让 Flyway 重新跑一遍
   就好。
+- **反复 `mvn spring-boot:run`(不带 `clean`)偶尔会让某个 bean 装配失败,
+  哪怕代码本身完全正确**:2026-08-11 复核 Admin 用户管理时踩到过——
+  `target/classes` 里 `UserMapperImpl.class` 明明已经生成,某次单纯重启
+  `spring-boot:run` 却报 `No qualifying bean of type UserMapper`
+  直接拒绝启动;另一次不完整的重启则是启动成功,但只有新加的
+  `GET /api/v1/admin/users` 单独 500,复用同一个 `UserMapper` 的旧接口
+  (`/users/me`)完好无损。两次都是 Maven 增量编译状态不一致导致的运行时
+  假象,不是代码问题——`mvn clean compile` 之后重启即可稳定复现"启动成功、
+  所有接口正常"。如果遇到一个新写的 controller/service 报奇怪的 bean 装配
+  错误、或者只有新端点 500 而其余复用同一个 bean 的旧端点正常,先怀疑这个,
+  不要急着去改代码。
 
 ## 环境配置(Profiles)
 
@@ -509,3 +520,39 @@ mvn test -Dtest=ReportFlowIntegrationTest
 登录了但角色是 `CUSTOMER` 直接改地址栏输入这个 URL,会被
 `app/admin/layout.tsx` 的角色校验弹回首页——这个校验在页面内容渲染之前就
 生效,不是"入口对非 ADMIN 隐藏"这种前端伪保护,详见 CLAUDE.md Phase 8。
+
+## Admin User Management(用户管理,2026-08-11)
+
+```bash
+ADMIN_TOKEN="<用 admin@cineverse.local / Admin@12345 登录拿到的 accessToken>"
+
+# 分页查询所有用户
+curl -s "http://localhost:8081/api/v1/admin/users?page=0&size=20" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+
+# 修改指定用户的角色(不能是自己,见下面)
+curl -s -i -X PATCH "http://localhost:8081/api/v1/admin/users/<user-id>/role" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"role":"ADMIN"}'
+
+# 删除指定用户(有订单记录或是调用者自己都会 409)
+curl -s -i -X DELETE "http://localhost:8081/api/v1/admin/users/<user-id>" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+未登录 `401`;登录了但角色是 `CUSTOMER` `403`(和其余 `/api/v1/admin/**`
+接口同一套语义)。**改角色/删除接口传自己的 user id 会得到 409**——这是服务端
+强制的,不是只有前端按钮变灰,用不属于自己的 token 试一遍就能验证:
+
+```bash
+MY_ID=$(curl -s "http://localhost:8081/api/v1/users/me" -H "Authorization: Bearer $ADMIN_TOKEN" | jq -r .id)
+curl -s -i -X PATCH "http://localhost:8081/api/v1/admin/users/$MY_ID/role" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"role":"CUSTOMER"}'
+# => 409 {"message":"Cannot change your own role."}
+```
+
+前端页面在 `http://localhost:3000/admin/users`(`AdminHeader` 的 "Users" 导航
+项)。**"Movies" 导航项目前指向一个不存在的页面**(`/admin/movies` 没有对应
+`page.tsx`,点击会落到 Next.js 全局兜底 404)——这是已知的待决问题,不是这次
+遗漏修复,见 CLAUDE.md 对应小节。

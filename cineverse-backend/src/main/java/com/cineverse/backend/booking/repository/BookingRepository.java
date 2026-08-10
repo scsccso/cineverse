@@ -39,4 +39,8 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     // orphan/cascade-fail its booking history, same reasoning as
     // MovieService.delete()'s existsByMovieId (see V8/V9).
     boolean existsByShowtimeId(UUID showtimeId);
+
+    // Backs AdminUserService.deleteUser()'s guard - deleting a user must not
+    // orphan/cascade-fail its booking history.
+    boolean existsByUserId(UUID userId);
 }

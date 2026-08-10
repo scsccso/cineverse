@@ -15,7 +15,7 @@ CineVerse 是一个电影院在线选座订票系统:用户可以浏览正在上
 
 CineVerse 同时是一个全栈工程能力的作品集项目:架构设计、高并发下的数据一致性处理、安全性、测试(Testcontainers 真实数据库/缓存集成测试)与 CI/CD 等工程实践贯穿整个项目,而不只是 CRUD 堆砌。
 
-**当前状态:Phase 0~8 全部完成,MVP 路线图收尾。** User Management(注册/登录/刷新/登出)、Movie Management(电影 CRUD + 海报上传)、Cinema & Hall Management(分店/影厅/座位自动布局)、Showtime Scheduling(场次排期)、Seat Booking(选座锁座 + 订单)、Payment(Stripe Checkout + webhook 幂等确认)、Order & E-ticket(电子票 + 入场核销)、Admin Dashboard & Reporting(销售报表 + 上座率分析,CSV/PDF 导出)。
+**当前状态:Phase 0~8 全部完成,MVP 路线图收尾;另加 Admin 用户管理(用户列表/改角色/删除)。** User Management(注册/登录/刷新/登出)、Movie Management(电影 CRUD + 海报上传)、Cinema & Hall Management(分店/影厅/座位自动布局)、Showtime Scheduling(场次排期)、Seat Booking(选座锁座 + 订单)、Payment(Stripe Checkout + webhook 幂等确认)、Order & E-ticket(电子票 + 入场核销)、Admin Dashboard & Reporting(销售报表 + 上座率分析,CSV/PDF 导出)、Admin User Management(用户列表分页/改角色/删除,含服务端强制的自我锁定防护)。
 
 ## 技术栈
 
@@ -55,8 +55,8 @@ CineVerse/
     ├── .env.example           # NEXT_PUBLIC_API_BASE_URL 样例
     └── src/
         ├── app/
-        │   ├── (customer)/    # 顾客端路由组(暗色 Navbar 外壳):/, /login, /register, /profile, /showtimes/[id](/seats), /bookings/[id]/confirmed
-        │   └── admin/         # 管理后台(独立 AdminHeader 外壳 + 角色校验):/admin/dashboard
+        │   ├── (customer)/    # 顾客端路由组(暗色 Navbar 外壳):/, /login, /register, /profile, /showtimes/[id](/seats), /bookings(/[id]/confirmed)
+        │   └── admin/         # 管理后台(独立 AdminHeader 外壳 + 角色校验):/admin/dashboard, /admin/users
         ├── components/        # ui(shadcn) / auth / layout / motion / booking(选座 + 支付确认) / admin(报表图表、筛选器、导出按钮)
         ├── lib/                # api 客户端、auth context、zod schema
         └── proxy.ts           # 路由保护(Next 16:middleware 改名 proxy)
