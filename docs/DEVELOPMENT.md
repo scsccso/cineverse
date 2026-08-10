@@ -553,6 +553,23 @@ curl -s -i -X PATCH "http://localhost:8081/api/v1/admin/users/$MY_ID/role" \
 ```
 
 前端页面在 `http://localhost:3000/admin/users`(`AdminHeader` 的 "Users" 导航
-项)。**"Movies" 导航项目前指向一个不存在的页面**(`/admin/movies` 没有对应
-`page.tsx`,点击会落到 Next.js 全局兜底 404)——这是已知的待决问题,不是这次
-遗漏修复,见 CLAUDE.md 对应小节。
+项)。`AdminHeader` 曾经短暂多带过一个指向不存在页面的 "Movies" 导航项,已
+移除,见 CLAUDE.md 对应小节。
+
+本地跑这个模块的测试(service 层 Mockito 快测 + Testcontainers 真实 HTTP
+流程测试):
+
+```bash
+cd cineverse-backend
+mvn test -Dtest=AdminUserServiceTest,AdminUserFlowIntegrationTest
+```
+
+**CI 跑的是 `mvn clean test`(全量,含全部模块 + 架构治理测试),不是
+`mvn compile`**——这两者不是同一件事,`mvn compile`/`mvn clean compile`
+干净不代表 `mvn clean test` 会绿,2026-08-11 这次复核就在 CI 上被
+`TimestampedEntitySaveFlushRuleTest`(见 `architecture` 包)拦下过一次,
+本地只跑过 `mvn compile` 的验证完全没有触及这条规则。改动了任何调用
+`XxxRepository.save()`/`saveAll()` 的地方,如果对应实体带
+`@CreationTimestamp`/`@UpdateTimestamp`(目前是 `save`/`saveAndFlush` 而不是
+别的方法名的问题,`delete`/`findById` 等不受这条规则约束),提交前跑一次
+本地全量 `mvn clean test` 比只跑 `mvn compile` 更接近 CI 真实会检查的范围。

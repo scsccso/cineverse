@@ -37,7 +37,7 @@ public class AdminUserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
         user.setRole(request.role());
-        return userRepository.save(user);
+        return userRepository.saveAndFlush(user);
     }
 
     @Transactional

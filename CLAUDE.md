@@ -1500,6 +1500,64 @@ CONFIRMED 订单,确认二维码正常渲染。
   `spring-boot:run` 重启的进程,即使代码正确,也可能因为 Maven 增量编译状态
   不一致而在运行时表现出编译期发现不了的 bean 装配错误"这个真实场景。
   已经在 `docs/DEVELOPMENT.md` 补了一条对应的环境注意事项。
+- **CI 的 backend 检查一度真实地红过,根因和上面那次本地 500 完全无关,是一个
+  独立的、更实质的问题**:分支推上去之后 GitHub Actions 的 `mvn --batch-mode
+  --no-transfer-progress clean test` 失败,而这次复核此前只跑过
+  `mvn compile`/`mvn clean compile`,从没跑过全量 `mvn test`——这是本次复核
+  流程本身的一个盲区,`antigravity.md` 的验证记录同样只到 `mvn clean
+  compile` 为止,两边都没有跑测试套件,所以这个问题在落地前完全没被发现。
+  真正命中的是项目已有的一条架构治理测试
+  ——`TimestampedEntitySaveFlushRuleTest`(用 ArchUnit 扫描全部生产代码,
+  强制"任何 `@Entity` 带 `@CreationTimestamp`/`@UpdateTimestamp` 的字段,
+  存库必须用 `saveAndFlush()`/`saveAllAndFlush()`,不能用普通的
+  `save()`/`saveAll()`",因为 Hibernate 要到 flush 时才会真正填充这类
+  字段)——这条规则本身是从 Movie/Cinema/Hall 各自独立踩过同一个 bug 之后
+  加的护栏(见该测试类的类注释),`User` 实体的 `updatedAt` 正是
+  `@UpdateTimestamp`,而 `AdminUserService.updateUserRole` 原本调用的是
+  `userRepository.save(user)`——这是 Antigravity 原始代码里已经存在的问题,
+  不是这次新引入的,只是从没被跑过全量测试的环境验证到。修复是把这一处的
+  `save` 改成 `saveAndFlush`,一行改动。
+- **补的单元测试第一次跑的时候,自己又踩了同一条规则一次**:
+  `AdminUserServiceTest` 里原本写了一行
+  `verify(userRepository, never()).save(any())` 想反向锁定"确实没调用过
+  `save()`,而是叫 `saveAndFlush()`",结果这一行本身在字节码层面就是一次对
+  `UserRepository.save(..)` 的调用(Mockito 的 `verify()` 就是这么实现的),
+  而 `TimestampedEntitySaveFlushRuleTest` 用 `ClassFileImporter()
+  .importPackages("com.cineverse.backend")` 扫描的是整个包前缀,并不区分
+  生产代码和测试代码(`target/test-classes` 同样在扫描范围内)——于是这条
+  测试代码本身把测试跑红了第二次。删掉这一行 `never()` 断言即可,理由是
+  "不写 `save()` 这件事本来就已经被 `TimestampedEntitySaveFlushRuleTest`
+  在生产代码层面强制锁定了,不需要在这个 service 测试里对同一件事再断言
+  一遍,而且这样断言反而会自己触发这条规则"。
+
+#### 单元测试覆盖:AdminUserService(Mockito)+ AdminUserFlowIntegrationTest(Testcontainers)
+
+自我锁定这条 409 校验此前完全没有测试覆盖(Antigravity 的原始交付里,
+`user` 包下没有任何测试文件)。补了两层,和 `TicketServiceTest` +
+`TicketFlowIntegrationTest`、`BookingServiceListTest` +
+`BookingFlowIntegrationTest` 这两组既有的"service 层 Mockito 快测 + 真实
+HTTP 流程慢测"配对是同一个模式,不是发明新的测试风格:
+
+- **`AdminUserServiceTest`**(Mockito,无需 Testcontainers,跑得快):覆盖
+  `updateUserRole`/`deleteUser` 各自的自我锁定分支(命中即 409,且
+  `verifyNoInteractions` 断言连 `UserRepository`/`BookingRepository` 都没碰
+  过,证明这个判断在任何查库动作之前就短路了,不是"查完了才拒绝"),以及
+  正常改角色、正常删除、目标用户不存在(404)、目标用户有订单记录时删除
+  被拒(409)几条主干逻辑。
+- **`AdminUserFlowIntegrationTest`**(Testcontainers 真实 Postgres,过完整的
+  Spring Security 过滤器链):Mockito 测试传的 `callerId` 是手工构造的参数,
+  没办法验证 `AdminUserController` 有没有正确地把 `Authentication` 解析成
+  "调用者自己的 id"这一步接线是不是对的——如果这里被改错(比如手滑传成了
+  路径变量而不是当前认证主体),`AdminUserServiceTest` 的每个用例依然会
+  全绿,但真实 HTTP 请求下的自我锁定漏洞完全不会被拦住。这个测试类直接用
+  `V2__seed_admin.sql` 播种的唯一 ADMIN 账号当"自己"去打真实的
+  `PATCH/DELETE .../admin/users/{id}`,复现的正是复核时手动用 curl 发现
+  的那个真实场景的形状(这个项目从来只播种一个 ADMIN,所以"ADMIN 改自己"
+  和"ADMIN 改唯一的另一个 ADMIN"在这里是同一件事)。断言不只停在状态码:
+  409 之后紧跟着再打一次 `GET /users/me`,确认角色/账号真的原封未动,不是
+  "响应报错但已经写库一半"。额外补了一条"改别人的角色/删别人的账号仍然
+  正常工作"的用例,因为这是 `AdminUserController` 第一次拿到集成测试覆盖,
+  之前连正常路径也没有任何自动化验证。
 
 #### ADMIN 反向隔离改成精确定位到具体页面,不是整个顾客端路由组
 
@@ -1554,15 +1612,16 @@ Component,在 `useEffect` 里读 `status`/`user`,ADMIN 登录态下
   加上纯粹是为了不让 ADMIN 停留在一个对他们没有实际意义的"我的订单"页面,
   是 UX 层面的选择,不是安全要求。
 
-#### 已知遗留:`AdminHeader` 的 `/admin/movies` 导航链接目前指向不存在的页面
+#### `AdminHeader` 的 `/admin/movies` 死链接:已移除,不新建页面
 
 Sprint 4 给 `AdminHeader` 加了 Dashboard/Movies/Users 三个导航链接,但只有
 `/admin/users`(这次一起交付)和已有的 `/admin/dashboard` 真实存在——
-`/admin/movies` 没有对应的 `page.tsx`,点击会落到 Next.js 的全局兜底 404(不是
-`app/admin/not-found.tsx`,原因和该文件本身"目前触发不到"的已知局限是同一条,
-见 Phase 8 前端补充)。这是一个待决问题,不在这次复核范围内擅自处理——要么
-后续排期做一个真正的电影管理页面,要么把这个链接从导航里去掉,取决于电影
-管理功能是否要进 admin 后台的路线图,留给下一次迭代决定。
+`/admin/movies` 没有对应的 `page.tsx`,点击会落到 Next.js 的全局兜底 404。
+复核时先把这个问题原样报告、不擅自处理;拿到决定后处理方式是**移除这个导航
+项**,不是补一个电影管理页面——电影管理目前完全是后端接口驱动(Phase 2 的
+`/api/v1/movies/**`,ADMIN-only 的 CRUD 走 Swagger/curl,没有配套前端页面),
+给它单独建一个 admin CRUD 页面是比"移除一个死链接"大得多的工作量,不属于
+这次任务范围,以后要做再单独排期。
 
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
