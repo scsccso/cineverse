@@ -1,7 +1,9 @@
 import { apiFetch, ApiError } from "./client";
 import type { ErrorResponse, GenreResponse, MovieRequest, MovieResponse, Page } from "./types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+// 8081, not 8080 — see lib/api/client.ts's API_BASE_URL comment and
+// docs/DEVELOPMENT.md's port-conflict note.
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
 
 /** GET /api/v1/movies is public (no Authorization needed) — same endpoint the
  * customer-facing movies.ts hits, but with page/size instead of a status

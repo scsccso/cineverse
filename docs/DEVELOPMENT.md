@@ -12,6 +12,15 @@
   `NEXT_PUBLIC_API_BASE_URL` 相应指向 `http://localhost:8081`。换一台没有这个
   冲突的机器,直接用默认的 8080 即可(把 `SERVER_PORT=8081` 去掉,
   `frontend/.env.local` 也改回 8080)。
+- **新建 git worktree 不会带上 `frontend/.env.local`**:这个文件是 gitignored
+  的,`git worktree add` 只会检出受版本控制的文件,新 worktree 里
+  `frontend/.env.local` 是空的——`NEXT_PUBLIC_API_BASE_URL` 会退回代码里写死
+  的兜底值,不会自动等于当前这台机器实际在用的 8081。忘记手动复制这个文件,
+  症状是前端所有 API 请求悄悄打到错误的端口(表现为网络请求失败/CORS 报错,
+  不是编译或类型错误,`npm run build`/`npm run lint` 都测不出来)——2026-08-12
+  开发 `/admin/movies` 时真的踩过一次。新开 worktree 后记得从主 checkout 手动
+  复制一份:`cp ../../frontend/.env.local frontend/.env.local`(路径按实际
+  worktree 层级调整)。
 - **本机 shell 里裸跑 `mvn spring-boot:run` 可能不会用 JDK 25**:本机装了不止
   一个 JDK,新开的 shell 里 `mvn` 解析到的 `java` 不一定是 Eclipse Temurin 25——
   症状是启动时报 `UnsupportedClassVersionError`(class file version 69,当前

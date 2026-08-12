@@ -1,7 +1,12 @@
 import type { ErrorResponse } from "./types";
 
+// 8081, not 8080 — see docs/DEVELOPMENT.md's port-conflict note for why the
+// backend runs on 8081 in local dev. This fallback only matters when
+// NEXT_PUBLIC_API_BASE_URL isn't set at all (e.g. a fresh worktree/clone
+// without .env.local yet) — a wrong fallback here silently points every API
+// call at a port nothing is listening on.
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
 
 /** Poster/backdrop URLs come back as backend-relative paths (e.g. "/uploads/x.jpg"
  * or the placeholder "/images/no-poster.svg") — they're served by the Spring
