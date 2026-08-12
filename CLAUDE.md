@@ -1753,6 +1753,70 @@ commit 修的问题(`AdminUserService.updateUserRole` 用 `save()` 而不是
   影响(即便事后回溯确认没有牵连,那也是运气好,不是核对到位)。这条原则
   和上面两条同样重要:一次事故的"恢复"不应该止步于"看起来数量对了"。
 
+### Admin 电影管理页面 `/admin/movies`(2026-08-12)
+
+补上了 Sprint 4(见 `antigravity.md`)留下的死链接对应的真实页面——不新建
+后端 Controller,完全复用 Phase 2 已有的 `MovieController`
+(`/api/v1/movies` CRUD + `/{id}/poster`、`/{id}/backdrop` 两个上传接口)和
+公开的 `GET /api/v1/genres`,契约在正式动手前用 curl 逐项核对过(细节和
+过程见 `antigravity.md` Sprint 5 前面的核实记录,不在这里重复)。
+
+关键决定:
+
+- **列表页(`/admin/movies`)照抄 `/admin/users` 已验证过的分页/竞态模式**
+  ——`Page<T>` 响应结构逐字段相同(两者都是 Spring Data 默认序列化),
+  分页 UI、`requestIdRef` 防竞态、确认删除 Dialog 全部照抄,唯一区别是
+  `GET /api/v1/movies` 本身是公开接口,不需要 `callAuthorized` 包一层。
+  删除的 409("电影仍有排期场次")直接把 `ApiError.message` 原样展示给
+  管理员,不额外拼接文案——这条错误信息本身已经写得足够清楚
+  (`MovieHasScheduledShowtimesException`)。
+- **创建表单默认 `status = COMING_SOON`,不是 `NOW_PLAYING`**——新建的电影
+  在信息还没被确认前不该直接对顾客端可见为"正在热映",管理员需要手动
+  确认好海报/字段之后再切换状态,这是一个刻意的默认值选择,不是遗漏。
+- **创建成功后跳转到编辑页,不是列表页**,因为海报/背景图只能在电影已经
+  有 `id` 之后才能上传(`POST /{id}/poster`、`POST /{id}/backdrop` 两个
+  接口都要求电影已存在)——这不是一个可以绕过的两步流程,所以编辑页顶部
+  会显示一次性提示("电影已创建...现在可以上传海报/背景图"),避免管理员
+  以为提交表单就等于整个录入流程结束了。这个提示状态从
+  `?created=1` 这个一次性 query 参数读入(`useState` 的惰性初始值,不是
+  在 `useEffect` 里同步 `setState`——后者会撞上这个项目已经踩过一次的
+  `react-hooks/set-state-in-effect` 规则,见 Phase 8 admin dashboard 那次
+  记录),读完之后用 `router.replace` 把参数从 URL 里去掉,避免刷新页面
+  重复触发,跟座位选择页的 booking-resume 处理是同一个模式(见 Phase 6)。
+- **编辑表单打开时必须用 `movie.genres` 回填 genre 多选框的选中状态,不能
+  留空**——`PUT` 是全量替换不是增量 patch(契约核实阶段已确认),如果编辑
+  表单默认不选中任何 genre,管理员只改了片名就直接保存,会在无声无息中
+  清空这部电影原有的所有 genre 关联。`MovieForm` 组件里 `genreIds` 用
+  独立的 `useState`(不是 react-hook-form 注册字段)管理,初始值来自
+  `initialMovie?.genres.map(g => g.id)`,创建页则是空数组。
+- **genre 多选没有新增 Checkbox/多选组件,复用的是 admin dashboard 报表
+  页面粒度按钮同一个模式**(`variant` 在 `default`/`outline` 之间切换 +
+  `aria-pressed`),而不是引入一个新的 shadcn Checkbox 组件——项目里已经
+  有一个验证过的、无障碍达标的"多选态按钮组"模式(见 Phase 8 前端补充的
+  时间粒度按钮),选中态额外叠加一个 `Check` 图标(不止靠颜色区分,延续
+  1.5 节的双重编码标准),没有必要为同一件事再造一个新组件。
+- **图片上传是独立的 `uploadMovieImage` 辅助函数,绕开 `apiFetch`**——原因
+  和 `admin-reports.ts` 的 `downloadExport` 绕开 `apiFetch` 是同一个:
+  `apiFetch` 固定把 body 当 JSON 处理并设置
+  `Content-Type: application/json`,`multipart/form-data` 需要浏览器自己
+  按 `FormData` 生成带 boundary 的 `Content-Type`,这个头不能手动设置,
+  一旦设置就会破坏 boundary、后端解析不出文件。
+- **验证边界,如实记录**:`npm run build`(TypeScript 严格模式)、
+  `npm run lint` 全部跑通(过程中改了两处:`react-hooks/set-state-in-effect`
+  见上,以及 JSX 文本里的直引号改成中文书名号「」规避
+  `react/no-unescaped-entities`)。额外做了一次路由层面的冒烟测试——
+  `next build` 产物用 `next start` 起在一个独立端口上,带着仍然有效的
+  `refresh_token` cookie 直接 curl 三个新路由,确认都是 200、且渲染出的
+  是和已知正常工作的 `/admin/dashboard` 完全相同的结构(`AdminHeader` +
+  `AdminLayout` 的骨架屏——`/admin/**` 的实际页面内容本来就要等客户端
+  角色校验通过之后才渲染,curl 拿不到这一层,两个页面在这一层的表现
+  一致就是这次冒烟测试能给到的全部信心)。**这个会话里没有可用的浏览器
+  自动化工具(没有 Playwright MCP 或等价工具),创建表单提交、图片上传、
+  编辑页 genre 回填这几个真正需要交互验证的行为没有在真实浏览器里跑过
+  ——这些结论目前只到"代码走查 + 已经用 curl 验证过的后端契约对得上"这一
+  层,没有到"在浏览器里点过一遍"这一层,这个边界如实记录在这里,不假装
+  已经做了完整验证。**
+
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
 - 评价评分

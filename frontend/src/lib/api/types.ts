@@ -58,6 +58,24 @@ export interface MovieResponse {
   updatedAt: string;
 }
 
+/** Shared body shape for both POST (create) and PUT (full replace) — mirrors
+ * the backend's MovieRequest record exactly, including that PUT is a full
+ * replace: submitting genreIds always overwrites the movie's entire genre
+ * set, never merges with what was there before. No image fields — poster/
+ * backdrop only upload via their own multipart endpoints once the movie
+ * already has an id (see uploadMoviePoster/uploadMovieBackdrop). */
+export interface MovieRequest {
+  title: string;
+  description: string | null;
+  tagline: string | null;
+  durationMinutes: number;
+  contentRating: string | null;
+  userRating: number | null;
+  trailerUrl: string | null;
+  status: MovieStatus;
+  genreIds: string[];
+}
+
 /** Matches Spring Data's default (unwrapped) Page<T> JSON — see MovieController. */
 export interface Page<T> {
   content: T[];
