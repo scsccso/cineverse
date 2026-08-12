@@ -1817,6 +1817,75 @@ commit 修的问题(`AdminUserService.updateUserRole` 用 `save()` 而不是
   层,没有到"在浏览器里点过一遍"这一层,这个边界如实记录在这里,不假装
   已经做了完整验证。**
 
+### `/admin/movies` 补测:真实浏览器验证 + 发现一个预先存在的图片渲染 bug(2026-08-13)
+
+上一条记录里说"这个会话没有可用的浏览器自动化工具",这个结论后来被重新核实
+并推翻了——不是环境里真的没有,是第一次只搜了工具列表就下了结论。重新排查
+发现这台机器上 Playwright 的 Chromium 二进制其实已经缓存好了
+(`~/AppData/Local/ms-playwright/chromium-1234`,`INSTALLATION_COMPLETE`
+标记都在),只是 `playwright` 这个 npm 包当时没装在项目里——本地
+`npm install --no-save playwright` 之后就能跑(不写入 `package.json`,
+纯本次验证用的临时依赖)。这和 CLAUDE.md 历史上好几次"用 Playwright 实测"
+的记录能对上,说明这个能力确实存在,只是需要主动装一下,不是要去外部下载
+一个全新的浏览器内核。
+
+**验证环境**:延续本项目已有的"起第二个后端实例做隔离验证"惯例(见 Hero
+背景图那次、设计债批次修复那次)——`cineverse-backend` 用
+`SERVER_PORT=8082 CORS_ALLOWED_ORIGINS=http://localhost:3005` 起了一个独立
+实例(共用同一个 Postgres/Redis 容器),前端临时把 `.env.local` 指向 8082、
+`next build` 之后 `next start -p 3005`。全程只用脚本自己创建的一次性测试
+电影(标题带 `Playwright E2E Test Movie` 前缀),验证完主动删除,过程中
+专门核对过 `totalElements` 前后都是 11、没有碰任何真实种子电影或已有场次
+——这条纪律就是上一次事故之后新加的操作原则,这次是它第一次真正派上用场。
+
+**跑通的检查项(13 项里 12 项通过,细节见下面唯一的失败项)**:登录后按角色
+跳转、genre 多选按钮点击后正确显示按下状态、创建成功后跳到编辑页、编辑页
+一次性提示 banner 显示、上传接口本身不报错、列表页能看到新电影、**重新打开
+编辑页时 genre 多选框正确回填成已关联的分类而不是空的**、只改标题不碰
+genre 直接保存后刷新页面**genre 关联确实没有被清空**(这是最担心的那个回归
+点,实测确认没有问题)、删除后列表里确实不见了。
+
+**唯一的失败项,而且是一个真实存在、这次之前从没被发现过的 bug**:上传成功
+之后海报/背景图的**预览图实际上加载不出来**。第一版脚本只检查了
+`<img src>` 属性值不再是占位图路径就判定"通过",这个检查本身是错的——
+只证明了 URL 拼接对了,没有证明浏览器真的把图片加载出来了。往深查(加上
+`page.on("response")` 记录真实状态码)才发现每一次 `/_next/image?url=...`
+请求都是 400,`next start`/`next dev` 的服务端日志给出了明确原因:
+```
+upstream image http://localhost:8082/uploads/xxx.png resolved to private ip ["::1","127.0.0.1"]
+```
+这是 Next.js 图片优化器一个内置的 SSRF 防护——上游图片地址如果解析到
+私有/回环 IP 就直接拒绝代理。用 `next dev` 复测过,同样的请求同样 400,
+不是 `next start`(生产模式)专属的问题。
+
+**这个 bug 和这次 `/admin/movies` 的代码本身无关,是一个从 Phase 2 就存在、
+一直没被触发过的缺口**:`next.config.ts` 的 `images.remotePatterns` 早就按
+`NEXT_PUBLIC_API_BASE_URL` 动态注册了后端 origin(这次核对过生成的配置确实
+精确匹配 `localhost:8082`,remotePattern 本身没写错),问题出在 Next.js 图片
+优化器另一层内置的、和 `remotePatterns` 独立的私有 IP 检查上,`remotePatterns`
+写对了也绕不过去。**没有真正触发过的原因**:11 部种子电影的 `poster_url`/
+`backdrop_url` 全部来自 OMDb/TMDB 热链(公网地址),从 Phase 2 到现在,
+从来没有一部电影真的通过 `StorageService` 走本地上传拿到过
+`/uploads/xxx.png` 这种相对路径、又被 `next/image` 渲染出来过——本地上传
+接口本身在 API 层面一直是好的(`curl` 直接传文件、拿到正确的
+`posterUrl` 都没问题),缺的是"前端真的把这样一张图渲染出来"这一步,而这一
+步在这次之前完全没有 UI 入口能触发到(`/admin/movies` 是第一个)。这正是
+坚持要做真实浏览器验证、不满足于"代码走查 + API 契约对得上"的原因——这个
+bug 不管怎么读代码都读不出来,`next.config.ts` 配置完全合规,`npm run
+build`/`lint` 也不会报,只有真的把图渲染到浏览器里才会暴露。
+
+**已知但还没决定怎么修**,几个方向(未擅自选择,等待决定):
+- 给渲染后端上传图片的 `<Image>` 加 `unoptimized`(放弃 Next 自动优化,
+  原样透传),影响范围只限于本地上传的图,OMDb/TMDB 热链图不受影响,因为
+  那些是公网地址,不会撞上这个私有 IP 检查。
+- 检查这个版本的 Next.js 是否有针对性的配置项可以豁免特定 remotePattern
+  的私有 IP 检查(没来得及查证,不确定存不存在)。
+- 生产部署如果后端不是裸 `localhost`(比如挂在一个真实域名/反向代理后面),
+  这个问题自然不会触发——但本地开发环境(前后端都在 `localhost`)会一直
+  撞上,不只是这次验证用的临时 8082 实例,**当前默认的 8081 后端同样会
+  撞上**(检查的是 hostname 解析结果,不针对某个特定端口),所以不是这次
+  验证临时环境特有的问题。
+
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
 - 评价评分
