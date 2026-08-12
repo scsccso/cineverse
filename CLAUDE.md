@@ -1716,6 +1716,287 @@ commit 修的问题(`AdminUserService.updateUserRole` 用 `save()` 而不是
 `mvn test` 才第一次真正跑到 144/144 全绿。这次降级的改动本身和这个 commit
 触碰的文件完全不重叠,过程中没有产生任何合并冲突。
 
+### `/admin/movies` 契约核实:探测性调用误删真实种子电影的事故与操作纪律(2026-08-12)
+
+不算新 Phase,是一次工具使用事故的复盘记录——原本没有专门收纳"跨 Phase 的
+操作纪律"这类条目的独立小节(不存在名为"关键学习与原则"的章节),按现有
+文档惯例(审计后修复、种子数据的海报图来源等)以日期归档的方式加在这里。
+完整事故经过和恢复过程见 `antigravity.md` Sprint 5,这里只记录沉淀下来的
+操作原则:
+
+- **探测性验证调用(尤其是 `DELETE`/`PUT` 这类有副作用的)不能拿真实数据当
+  第一个尝试对象,哪怕预期有 409/`RESTRICT` 兜底**——`/admin/movies` 的
+  API 契约核实任务中,为了验证 `DELETE /api/v1/movies/{id}` 遇到排期场次
+  时的 409 响应格式,选择直接对一部真实种子电影(`Interstellar`)发起
+  `DELETE`,理由是"这部电影应该有排期场次,删除会被 `RESTRICT`/409 挡下,
+  所以是安全的探测"。这个"应该会被挡下"的假设本身没有先用真实数据核实过,
+  纯粹是预期;实际执行后,`DELETE` 返回了 204(真删除成功)而不是预期的
+  409,因为这部电影在当时的数据库里恰好一场排期都没有。教训不是"应该更
+  仔细检查",而是一条具体的操作纪律:任何有副作用的探测性调用,第一个尝试
+  对象必须是自己创建、自己能完全控制生命周期的一次性数据——如果要验证的
+  是某个防护机制(如"有排期场次时删除应该被拒绝"),必须先用自己创造的
+  数据把触发条件真正搭建出来(自己建电影 + 自己建场次),而不是找一个"看起
+  来应该会触发"的真实对象去赌这个假设成不成立。
+- **执行前的安全假设如果和执行前一步刚查到的证据矛盾,必须先停下来重新
+  判断这个假设本身,不能带着矛盾的证据继续按原计划执行**——上面这次事故
+  里,`DELETE` 之前实际上先查过 `GET /api/v1/showtimes?movieId=...`,
+  结果已经如实返回了空数组(这部电影没有排期场次),这个结果和"删除会被
+  挡下"的预设假设是直接矛盾的,但操作时没有把这个矛盾当成一个需要重新
+  评估计划的信号,而是带着旧假设继续执行了原本计划好的 `DELETE`。矛盾
+  信号出现的那一刻就是该停下来的时刻,不是"反正流程都走到这一步了,先
+  跑一下看看"。
+- **事故发生后的处理顺序:先如实、完整地披露发生了什么,再动手恢复,恢复
+  完成后主动核对影响范围有没有超出预期,不能"数量对了就默认没事"**——
+  这次事故里,恢复动作(手动读 migration 源文件重建那一行数据 + 关联)
+  本身做对了,但恢复后第一次只核对了被删除又恢复的那一条记录和 `总数`
+  是否回到 11,没有主动去核对其余 10 部电影的字段/genre 关联有没有受到
+  影响(即便事后回溯确认没有牵连,那也是运气好,不是核对到位)。这条原则
+  和上面两条同样重要:一次事故的"恢复"不应该止步于"看起来数量对了"。
+
+### Admin 电影管理页面 `/admin/movies`(2026-08-12)
+
+补上了 Sprint 4(见 `antigravity.md`)留下的死链接对应的真实页面——不新建
+后端 Controller,完全复用 Phase 2 已有的 `MovieController`
+(`/api/v1/movies` CRUD + `/{id}/poster`、`/{id}/backdrop` 两个上传接口)和
+公开的 `GET /api/v1/genres`,契约在正式动手前用 curl 逐项核对过(细节和
+过程见 `antigravity.md` Sprint 5 前面的核实记录,不在这里重复)。
+
+关键决定:
+
+- **列表页(`/admin/movies`)照抄 `/admin/users` 已验证过的分页/竞态模式**
+  ——`Page<T>` 响应结构逐字段相同(两者都是 Spring Data 默认序列化),
+  分页 UI、`requestIdRef` 防竞态、确认删除 Dialog 全部照抄,唯一区别是
+  `GET /api/v1/movies` 本身是公开接口,不需要 `callAuthorized` 包一层。
+  删除的 409("电影仍有排期场次")直接把 `ApiError.message` 原样展示给
+  管理员,不额外拼接文案——这条错误信息本身已经写得足够清楚
+  (`MovieHasScheduledShowtimesException`)。
+- **创建表单默认 `status = COMING_SOON`,不是 `NOW_PLAYING`**——新建的电影
+  在信息还没被确认前不该直接对顾客端可见为"正在热映",管理员需要手动
+  确认好海报/字段之后再切换状态,这是一个刻意的默认值选择,不是遗漏。
+- **创建成功后跳转到编辑页,不是列表页**,因为海报/背景图只能在电影已经
+  有 `id` 之后才能上传(`POST /{id}/poster`、`POST /{id}/backdrop` 两个
+  接口都要求电影已存在)——这不是一个可以绕过的两步流程,所以编辑页顶部
+  会显示一次性提示("电影已创建...现在可以上传海报/背景图"),避免管理员
+  以为提交表单就等于整个录入流程结束了。这个提示状态从
+  `?created=1` 这个一次性 query 参数读入(`useState` 的惰性初始值,不是
+  在 `useEffect` 里同步 `setState`——后者会撞上这个项目已经踩过一次的
+  `react-hooks/set-state-in-effect` 规则,见 Phase 8 admin dashboard 那次
+  记录),读完之后用 `router.replace` 把参数从 URL 里去掉,避免刷新页面
+  重复触发,跟座位选择页的 booking-resume 处理是同一个模式(见 Phase 6)。
+- **编辑表单打开时必须用 `movie.genres` 回填 genre 多选框的选中状态,不能
+  留空**——`PUT` 是全量替换不是增量 patch(契约核实阶段已确认),如果编辑
+  表单默认不选中任何 genre,管理员只改了片名就直接保存,会在无声无息中
+  清空这部电影原有的所有 genre 关联。`MovieForm` 组件里 `genreIds` 用
+  独立的 `useState`(不是 react-hook-form 注册字段)管理,初始值来自
+  `initialMovie?.genres.map(g => g.id)`,创建页则是空数组。
+- **genre 多选没有新增 Checkbox/多选组件,复用的是 admin dashboard 报表
+  页面粒度按钮同一个模式**(`variant` 在 `default`/`outline` 之间切换 +
+  `aria-pressed`),而不是引入一个新的 shadcn Checkbox 组件——项目里已经
+  有一个验证过的、无障碍达标的"多选态按钮组"模式(见 Phase 8 前端补充的
+  时间粒度按钮),选中态额外叠加一个 `Check` 图标(不止靠颜色区分,延续
+  1.5 节的双重编码标准),没有必要为同一件事再造一个新组件。
+- **图片上传是独立的 `uploadMovieImage` 辅助函数,绕开 `apiFetch`**——原因
+  和 `admin-reports.ts` 的 `downloadExport` 绕开 `apiFetch` 是同一个:
+  `apiFetch` 固定把 body 当 JSON 处理并设置
+  `Content-Type: application/json`,`multipart/form-data` 需要浏览器自己
+  按 `FormData` 生成带 boundary 的 `Content-Type`,这个头不能手动设置,
+  一旦设置就会破坏 boundary、后端解析不出文件。
+- **验证边界,如实记录**:`npm run build`(TypeScript 严格模式)、
+  `npm run lint` 全部跑通(过程中改了两处:`react-hooks/set-state-in-effect`
+  见上,以及 JSX 文本里的直引号改成中文书名号「」规避
+  `react/no-unescaped-entities`)。额外做了一次路由层面的冒烟测试——
+  `next build` 产物用 `next start` 起在一个独立端口上,带着仍然有效的
+  `refresh_token` cookie 直接 curl 三个新路由,确认都是 200、且渲染出的
+  是和已知正常工作的 `/admin/dashboard` 完全相同的结构(`AdminHeader` +
+  `AdminLayout` 的骨架屏——`/admin/**` 的实际页面内容本来就要等客户端
+  角色校验通过之后才渲染,curl 拿不到这一层,两个页面在这一层的表现
+  一致就是这次冒烟测试能给到的全部信心)。**这个会话里没有可用的浏览器
+  自动化工具(没有 Playwright MCP 或等价工具),创建表单提交、图片上传、
+  编辑页 genre 回填这几个真正需要交互验证的行为没有在真实浏览器里跑过
+  ——这些结论目前只到"代码走查 + 已经用 curl 验证过的后端契约对得上"这一
+  层,没有到"在浏览器里点过一遍"这一层,这个边界如实记录在这里,不假装
+  已经做了完整验证。**
+
+### `/admin/movies` 补测:真实浏览器验证 + 发现一个预先存在的图片渲染 bug(2026-08-13)
+
+上一条记录里说"这个会话没有可用的浏览器自动化工具",这个结论后来被重新核实
+并推翻了——不是环境里真的没有,是第一次只搜了工具列表就下了结论。重新排查
+发现这台机器上 Playwright 的 Chromium 二进制其实已经缓存好了
+(`~/AppData/Local/ms-playwright/chromium-1234`,`INSTALLATION_COMPLETE`
+标记都在),只是 `playwright` 这个 npm 包当时没装在项目里——本地
+`npm install --no-save playwright` 之后就能跑(不写入 `package.json`,
+纯本次验证用的临时依赖)。这和 CLAUDE.md 历史上好几次"用 Playwright 实测"
+的记录能对上,说明这个能力确实存在,只是需要主动装一下,不是要去外部下载
+一个全新的浏览器内核。
+
+**验证环境**:延续本项目已有的"起第二个后端实例做隔离验证"惯例(见 Hero
+背景图那次、设计债批次修复那次)——`cineverse-backend` 用
+`SERVER_PORT=8082 CORS_ALLOWED_ORIGINS=http://localhost:3005` 起了一个独立
+实例(共用同一个 Postgres/Redis 容器),前端临时把 `.env.local` 指向 8082、
+`next build` 之后 `next start -p 3005`。全程只用脚本自己创建的一次性测试
+电影(标题带 `Playwright E2E Test Movie` 前缀),验证完主动删除,过程中
+专门核对过 `totalElements` 前后都是 11、没有碰任何真实种子电影或已有场次
+——这条纪律就是上一次事故之后新加的操作原则,这次是它第一次真正派上用场。
+
+**跑通的检查项(13 项里 12 项通过,细节见下面唯一的失败项)**:登录后按角色
+跳转、genre 多选按钮点击后正确显示按下状态、创建成功后跳到编辑页、编辑页
+一次性提示 banner 显示、上传接口本身不报错、列表页能看到新电影、**重新打开
+编辑页时 genre 多选框正确回填成已关联的分类而不是空的**、只改标题不碰
+genre 直接保存后刷新页面**genre 关联确实没有被清空**(这是最担心的那个回归
+点,实测确认没有问题)、删除后列表里确实不见了。
+
+**唯一的失败项,而且是一个真实存在、这次之前从没被发现过的 bug**:上传成功
+之后海报/背景图的**预览图实际上加载不出来**。第一版脚本只检查了
+`<img src>` 属性值不再是占位图路径就判定"通过",这个检查本身是错的——
+只证明了 URL 拼接对了,没有证明浏览器真的把图片加载出来了。往深查(加上
+`page.on("response")` 记录真实状态码)才发现每一次 `/_next/image?url=...`
+请求都是 400,`next start`/`next dev` 的服务端日志给出了明确原因:
+```
+upstream image http://localhost:8082/uploads/xxx.png resolved to private ip ["::1","127.0.0.1"]
+```
+这是 Next.js 图片优化器一个内置的 SSRF 防护——上游图片地址如果解析到
+私有/回环 IP 就直接拒绝代理。用 `next dev` 复测过,同样的请求同样 400,
+不是 `next start`(生产模式)专属的问题。
+
+**这个 bug 和这次 `/admin/movies` 的代码本身无关,是一个从 Phase 2 就存在、
+一直没被触发过的缺口**:`next.config.ts` 的 `images.remotePatterns` 早就按
+`NEXT_PUBLIC_API_BASE_URL` 动态注册了后端 origin(这次核对过生成的配置确实
+精确匹配 `localhost:8082`,remotePattern 本身没写错),问题出在 Next.js 图片
+优化器另一层内置的、和 `remotePatterns` 独立的私有 IP 检查上,`remotePatterns`
+写对了也绕不过去。**没有真正触发过的原因**:11 部种子电影的 `poster_url`/
+`backdrop_url` 全部来自 OMDb/TMDB 热链(公网地址),从 Phase 2 到现在,
+从来没有一部电影真的通过 `StorageService` 走本地上传拿到过
+`/uploads/xxx.png` 这种相对路径、又被 `next/image` 渲染出来过——本地上传
+接口本身在 API 层面一直是好的(`curl` 直接传文件、拿到正确的
+`posterUrl` 都没问题),缺的是"前端真的把这样一张图渲染出来"这一步,而这一
+步在这次之前完全没有 UI 入口能触发到(`/admin/movies` 是第一个)。这正是
+坚持要做真实浏览器验证、不满足于"代码走查 + API 契约对得上"的原因——这个
+bug 不管怎么读代码都读不出来,`next.config.ts` 配置完全合规,`npm run
+build`/`lint` 也不会报,只有真的把图渲染到浏览器里才会暴露。
+
+**已知但还没决定怎么修**,几个方向(未擅自选择,等待决定):
+- 给渲染后端上传图片的 `<Image>` 加 `unoptimized`(放弃 Next 自动优化,
+  原样透传),影响范围只限于本地上传的图,OMDb/TMDB 热链图不受影响,因为
+  那些是公网地址,不会撞上这个私有 IP 检查。
+- 检查这个版本的 Next.js 是否有针对性的配置项可以豁免特定 remotePattern
+  的私有 IP 检查(没来得及查证,不确定存不存在)。
+- 生产部署如果后端不是裸 `localhost`(比如挂在一个真实域名/反向代理后面),
+  这个问题自然不会触发——但本地开发环境(前后端都在 `localhost`)会一直
+  撞上,不只是这次验证用的临时 8082 实例,**当前默认的 8081 后端同样会
+  撞上**(检查的是 hostname 解析结果,不针对某个特定端口),所以不是这次
+  验证临时环境特有的问题。
+
+### 本地上传图片渲染 bug 的修复:`images.dangerouslyAllowLocalIP`(2026-08-13)
+
+上一条记录的图片渲染 bug 已经修复并重新用 Playwright 实测过。修之前先按
+`frontend/AGENTS.md` 的指示去读了本地实际安装的 Next.js 16 文档
+(`node_modules/next/dist/docs/`),而不是凭训练数据里的旧版本 API 猜——
+这次真的在这份文档里查到了针对性的官方豁免机制,不是"只能用 `unoptimized`
+放弃优化"这一条路:
+
+- 官方文档原文,两处:
+  - `node_modules/next/dist/docs/01-app/02-guides/upgrading/version-16.md`
+    第 819~821 行("Local IP Restriction (Breaking change)"):"A new security
+    restriction blocks local IP optimization by default. Set
+    `images.dangerouslyAllowLocalIP` to `true` only for private networks."
+  - `node_modules/next/dist/docs/01-app/03-api-reference/02-components/
+    image.md` 第 896~918 行(`dangerouslyAllowLocalIP` 配置项完整说明):
+    默认值 `false`;"If you need to optimize remote images hosted elsewhere
+    in your local network, you can set the value to true."
+
+**实现,第一版(被合并前的复核推翻,不是最终方案)**:`next.config.ts` 新增
+`images.dangerouslyAllowLocalIP`,按 `NEXT_PUBLIC_API_BASE_URL` 的 hostname
+是不是字面量 `localhost`/`127.0.0.1`/`::1` 来反推"是不是本地开发",反推为真
+就打开这个开关。提交之后、开 PR 之前的复核问出了两个直接命中的真实问题:
+
+1. **字符串匹配不是环境判断,分不清"本地开发"和"生产环境的后端 origin
+   碰巧也叫 localhost"**——同机反向代理场景下(前端和后端部署在同一台机器,
+   通过内部 `localhost` 互通)生产环境完全可能合法地把
+   `NEXT_PUBLIC_API_BASE_URL` 配成 `http://localhost:xxxx`,这时字符串匹配
+   会误判成本地开发,把生产环境的 SSRF 防护也关掉。
+2. **`NEXT_PUBLIC_API_BASE_URL` 缺失时的兜底值本身是 `http://localhost:8081`
+   ——hostname 恰好也是 `localhost`,导致"环境变量缺失/读取失败"这个应该
+   选更安全一侧(`false`)的场景,反而被判成 `true`**。而且这不是假设情景:
+   `.github/workflows/ci.yml` 的 `frontend` job 跑 `npm run build` 时完全
+   没有设置这个环境变量,复核时直接拿 CI 的真实条件(临时移走
+   `.env.local`、不设任何环境变量)本地重跑构建验证过——第一版逻辑下,CI
+   打出来的生产构建产物里 `dangerouslyAllowLocalIP` 真的是 `true`。
+
+**最终方案:改成一个独立的、显式的 opt-in 环境变量
+`NEXT_ALLOW_LOCAL_IMAGE_OPTIMIZATION`,不再从 `NEXT_PUBLIC_API_BASE_URL`
+反推**——这个值只有字面量等于 `"true"` 才生效,其余任何情况(未设置、拼错、
+CI、任何真实部署)一律是安全的 `false`,不存在"猜错"的空间。仍然要求
+`backendIsLoopback`(hostname 命中回环地址)同时成立才真正打开
+`dangerouslyAllowLocalIP`,这一层判断保留下来只是让代码本身能自解释"这个
+开关真的只在后端是本地地址时才有意义",不是安全判断的主要依据——真正决定
+开不开的是那个必须显式设置的 opt-in 变量:
+```ts
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
+const backendIsLoopback = LOOPBACK_HOSTNAMES.has(apiBaseUrl.hostname);
+const localImageOptimizationOptIn =
+  process.env.NEXT_ALLOW_LOCAL_IMAGE_OPTIMIZATION === "true";
+const allowLocalImageOptimization = backendIsLoopback && localImageOptimizationOptIn;
+// ...
+images: {
+  ...(allowLocalImageOptimization ? { dangerouslyAllowLocalIP: true } : {}),
+  remotePatterns: [...],
+}
+```
+这才是真正对应后端 `app.security.cookie-secure` 那个思路的版本——
+`SPRING_PROFILES_ACTIVE` 是一个专门用来声明"当前是什么环境"的独立信号,不是
+从数据库连接串之类的旁路信息反推出来的,第一版恰恰是拿一个"要请求哪个
+URL"的变量去顺带回答一个不相关的安全姿态问题,这是原设计的根本问题所在,
+不只是"多加一个环境变量"这么表面。
+
+**三点都重新用实际构建验证过,不是只看代码**:
+1. 完全模拟 CI 条件(挪走 `.env.local`、不设任何环境变量)构建,读取
+   `.next/required-server-files.json`,确认 `dangerouslyAllowLocalIP:
+   false`。
+2. 正常本地开发配置(`.env.local` 里只有 `NEXT_PUBLIC_API_BASE_URL`,不设
+   opt-in 变量)构建,同样确认是 `false`——不小心漏设 opt-in 变量的本地
+   开发者也不会意外打开这个豁免。
+3. `.env.local` 里显式加上 `NEXT_ALLOW_LOCAL_IMAGE_OPTIMIZATION=true` 构建,
+   确认变成 `true`,并重新跑了一遍下面的 Playwright 图片渲染验证,结果不变
+   (依然全部解码成功)。
+
+**影响范围核对**:全仓库 `resolveMediaUrl` 的调用点核对了一遍——
+`movie-card.tsx`、`movie-backdrop.tsx`(`hero-carousel.tsx`/电影详情页共用
+这一个组件)、`(customer)/showtimes/[id]/page.tsx`、
+`components/booking/booking-confirmation.tsx`,加上这次新增的
+`admin/movies/page.tsx`/`movie-image-upload.tsx`,一共 7 个真正的渲染点。
+但这次修复本身**一个都没有改**——`dangerouslyAllowLocalIP` 是 `next.config.
+ts` 里的全局开关,不是像 `unoptimized` 那样要逐个 `<Image>` 实例加的 prop,
+一次配置对全部 7 个渲染点同时生效。列出这份清单是为了确认"改完之后这 7 个
+地方都会受益,不会有漏网的",不是这次改动本身要触达的文件列表。
+
+**重新验证,针对性只补上一项,不是重跑全部 13 项**:延续之前那套隔离环境
+(8082 后端 + 3005 前端),Playwright 直接检查图片是否真的解码成功
+(`img.decode()` + `naturalWidth > 0`,不是只看 `src` 属性),覆盖编辑页的
+海报预览、背景图预览、列表页缩略图三个不同渲染点(三处的 `<Image>`
+`sizes` 不同,请求的 srcset 候选宽度也不同)。
+
+**过程中的一段插曲,值得记录**:第一次重新验证时用的还是最早那张手工拼的
+68 字节 1×1 像素测试 PNG,结果三处全部显示 `naturalWidth: 0`——一度怀疑
+修复没生效。逐层排查(直接访问 `/_next/image` 拿到的原始字节、用
+`img.decode()` 在隔离的 `createElement` 场景里单独测试同一个 URL)才发现
+`/_next/image` 端点本身已经不再 400 了(SSRF 拦截确实解除了),问题出在
+另一个地方:真实浏览器请求这个端点时会带上 `Accept: image/webp` 之类的
+头,触发 Next 把图片转码成 WebP,而这张 1×1 像素的测试图转码成 WebP 之后
+`complete` 是 `true`(没有报错)但 `naturalWidth` 是 `0`——这是测试用的
+退化 fixture(真实场景不会有人上传 1×1 像素的图)在 WebP 编解码路径上踩到
+的一个边界情况,不是这次修复引入或遗留的问题。换成一张从项目里已有海报
+URL 下载下来的正常尺寸 JPEG(380×562)重新测,编辑页海报/背景图预览、
+列表页缩略图三处的 `naturalWidth` 分别读到 200/200/48(数值对应各自请求
+的候选宽度),确认解码成功。
+
+**结论**:修复生效,已经用真实浏览器验证过(不是只信 `next.config.ts`
+配置正确、也不是只信没有 400 了),`/admin/movies` 的上传→预览这条链路
+现在端到端可用;开关本身也补了三种场景的真实构建验证(CI 条件/正常本地
+开发未 opt-in/显式 opt-in),不存在"环境变量缺失就默认打开"或"生产环境
+恰好也叫 localhost 就被误判"这两个第一版真实存在过的问题。相关的
+`frontend/.env.example`、`docs/DEVELOPMENT.md` 也同步补了这个新变量的
+说明。
+
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
 - 评价评分

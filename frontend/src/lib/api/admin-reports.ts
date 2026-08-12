@@ -1,7 +1,9 @@
 import { apiFetch } from "./client";
 import type { OccupancyReportResponse, ReportGranularity, SalesReportResponse } from "./types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+// 8081, not 8080 — see lib/api/client.ts's API_BASE_URL comment and
+// docs/DEVELOPMENT.md's port-conflict note.
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
 
 export function getSalesReport(
   accessToken: string,

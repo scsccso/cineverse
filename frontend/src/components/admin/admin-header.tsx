@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Clapperboard, ArrowLeft, LayoutDashboard, Users } from "lucide-react";
+import { Clapperboard, ArrowLeft, LayoutDashboard, Film, Users } from "lucide-react";
 import { LogoutButton } from "@/components/auth/logout-button";
 import type { UserResponse } from "@/lib/api/types";
 
@@ -18,11 +18,13 @@ import type { UserResponse } from "@/lib/api/types";
 export function AdminHeader({ user }: { user: UserResponse | null }) {
   const pathname = usePathname();
 
-  // No "Movies" entry: movie management is currently API-driven only, with
-  // no admin CRUD page behind it (see CLAUDE.md — this was a dead link
-  // pointing at a page that was never built, not an oversight here).
+  // "Movies" was a dead link for a while (see CLAUDE.md — pointed at a page
+  // that had never been built) and was removed rather than built out on the
+  // spot. It's back now that /admin/movies is a real page, not a re-add of
+  // the original dead link.
   const navItems = [
     { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/admin/movies", label: "Movies", icon: Film },
     { href: "/admin/users", label: "Users", icon: Users },
   ];
 
