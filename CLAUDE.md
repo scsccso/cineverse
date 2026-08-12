@@ -1886,6 +1886,77 @@ build`/`lint` 也不会报,只有真的把图渲染到浏览器里才会暴露�
   撞上**(检查的是 hostname 解析结果,不针对某个特定端口),所以不是这次
   验证临时环境特有的问题。
 
+### 本地上传图片渲染 bug 的修复:`images.dangerouslyAllowLocalIP`(2026-08-13)
+
+上一条记录的图片渲染 bug 已经修复并重新用 Playwright 实测过。修之前先按
+`frontend/AGENTS.md` 的指示去读了本地实际安装的 Next.js 16 文档
+(`node_modules/next/dist/docs/`),而不是凭训练数据里的旧版本 API 猜——
+这次真的在这份文档里查到了针对性的官方豁免机制,不是"只能用 `unoptimized`
+放弃优化"这一条路:
+
+- 官方文档原文,两处:
+  - `node_modules/next/dist/docs/01-app/02-guides/upgrading/version-16.md`
+    第 819~821 行("Local IP Restriction (Breaking change)"):"A new security
+    restriction blocks local IP optimization by default. Set
+    `images.dangerouslyAllowLocalIP` to `true` only for private networks."
+  - `node_modules/next/dist/docs/01-app/03-api-reference/02-components/
+    image.md` 第 896~918 行(`dangerouslyAllowLocalIP` 配置项完整说明):
+    默认值 `false`;"If you need to optimize remote images hosted elsewhere
+    in your local network, you can set the value to true."
+
+**实现:`next.config.ts` 新增 `images.dangerouslyAllowLocalIP`,按后端
+origin 是否回环地址动态决定,不是无条件打开**——和后端
+`app.security.cookie-secure`(`application.yml` 默认开,只有
+`application-local.yml` 关掉,见 Phase 1)是同一个思路,只不过前端没有
+Spring 那种 profile 机制,改成直接复用 `next.config.ts` 里已经在读的
+`NEXT_PUBLIC_API_BASE_URL`(这个值本来就用来生成 `remotePatterns`)反推:
+```ts
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
+const backendIsLoopback = LOOPBACK_HOSTNAMES.has(apiBaseUrl.hostname);
+// ...
+images: {
+  ...(backendIsLoopback ? { dangerouslyAllowLocalIP: true } : {}),
+  remotePatterns: [...],
+}
+```
+后端 origin 配成真实域名(生产场景)时这个值天然是 `false`(默认最安全的
+状态),图片优化完整保留;只有本地开发这种后端就是 `localhost`/`127.0.0.1`
+的场景才会打开这个豁免,不是全局无差别放开。
+
+**影响范围核对**:全仓库 `resolveMediaUrl` 的调用点核对了一遍——
+`movie-card.tsx`、`movie-backdrop.tsx`(`hero-carousel.tsx`/电影详情页共用
+这一个组件)、`(customer)/showtimes/[id]/page.tsx`、
+`components/booking/booking-confirmation.tsx`,加上这次新增的
+`admin/movies/page.tsx`/`movie-image-upload.tsx`,一共 7 个真正的渲染点。
+但这次修复本身**一个都没有改**——`dangerouslyAllowLocalIP` 是 `next.config.
+ts` 里的全局开关,不是像 `unoptimized` 那样要逐个 `<Image>` 实例加的 prop,
+一次配置对全部 7 个渲染点同时生效。列出这份清单是为了确认"改完之后这 7 个
+地方都会受益,不会有漏网的",不是这次改动本身要触达的文件列表。
+
+**重新验证,针对性只补上一项,不是重跑全部 13 项**:延续之前那套隔离环境
+(8082 后端 + 3005 前端),Playwright 直接检查图片是否真的解码成功
+(`img.decode()` + `naturalWidth > 0`,不是只看 `src` 属性),覆盖编辑页的
+海报预览、背景图预览、列表页缩略图三个不同渲染点(三处的 `<Image>`
+`sizes` 不同,请求的 srcset 候选宽度也不同)。
+
+**过程中的一段插曲,值得记录**:第一次重新验证时用的还是最早那张手工拼的
+68 字节 1×1 像素测试 PNG,结果三处全部显示 `naturalWidth: 0`——一度怀疑
+修复没生效。逐层排查(直接访问 `/_next/image` 拿到的原始字节、用
+`img.decode()` 在隔离的 `createElement` 场景里单独测试同一个 URL)才发现
+`/_next/image` 端点本身已经不再 400 了(SSRF 拦截确实解除了),问题出在
+另一个地方:真实浏览器请求这个端点时会带上 `Accept: image/webp` 之类的
+头,触发 Next 把图片转码成 WebP,而这张 1×1 像素的测试图转码成 WebP 之后
+`complete` 是 `true`(没有报错)但 `naturalWidth` 是 `0`——这是测试用的
+退化 fixture(真实场景不会有人上传 1×1 像素的图)在 WebP 编解码路径上踩到
+的一个边界情况,不是这次修复引入或遗留的问题。换成一张从项目里已有海报
+URL 下载下来的正常尺寸 JPEG(380×562)重新测,编辑页海报/背景图预览、
+列表页缩略图三处的 `naturalWidth` 分别读到 200/200/48(数值对应各自请求
+的候选宽度),确认解码成功。
+
+**结论**:修复生效,已经用真实浏览器验证过(不是只信 `next.config.ts`
+配置正确、也不是只信没有 400 了),`/admin/movies` 的上传→预览这条链路
+现在端到端可用。
+
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
 - 评价评分
