@@ -211,6 +211,14 @@ Glass)——`/admin/dashboard` 实际渲染出来是"暗色导航栏 + 浅色内
   图标双重编码、`isAnimationActive={false}` 均原样保留,用 Playwright 实测
   确认预设按钮仍是 44×44、图表数量和交互未受影响。
 
+**补充(2026-08-12,不重写以上内容,以上是当时的真实状态)**:"没有做成
+侧边栏"那条的前提"目前 admin 只有一个 dashboard 页面"已经不成立——
+`/admin/users`(2026-08-11)和 `/admin/movies`(2026-08-12)先后交付,
+`AdminHeader` 也随之补上了 Dashboard/Movies/Users 三个顶部导航链接
+(`usePathname` + `pathname.startsWith(href)` 判定当前项高亮)。仍然是顶部
+导航,不是侧边栏——三个页面的量级还没有到需要多级导航的地步,这条结论
+本身没有变,只是当时"只有一个页面"这个前提要更新。
+
 ### 1.5.3 登录/注册表单卡片保留 Card,不用 GlassCard(2026-08-08)
 
 `LoginForm`/`RegisterForm` 的外层容器(`app/(customer)/login/page.tsx`、
@@ -1533,6 +1541,32 @@ CONFIRMED 订单,确认二维码正常渲染。
   "不写 `save()` 这件事本来就已经被 `TimestampedEntitySaveFlushRuleTest`
   在生产代码层面强制锁定了,不需要在这个 service 测试里对同一件事再断言
   一遍,而且这样断言反而会自己触发这条规则"。
+- **"loading 状态从数据本身推导、用 request-id 丢弃过期响应"是一个可复用
+  模式,不是这个页面专属的一次性修复**:`admin/users/page.tsx` 最初把
+  `loading` 存成一个独立的 boolean,分页跳转时旧数据还没被新数据替换掉、
+  `loading` 却已经先翻回 `false`,会有一瞬间把上一页的数据当成当前页
+  显示;报错时也没有清空旧的 `usersPage`,导致表格照常渲染旧数据而不是
+  报错提示。改法是两条绑在一起的规则:loading 不再是手动维护的标志位,
+  而是直接由"手上的数据是否对应当前请求参数"推导(`!usersPage ||
+  usersPage.number !== page`);每次发起请求前用一个自增的 `requestIdRef`
+  记下"这是第几次请求",响应回来时先比对 `requestIdRef.current` 是否还是
+  发起时的那个值,不是才丢弃——两个几乎同时触发的请求,慢的那个回来时
+  不会覆盖快的那个已经渲染好的结果。这套组合后来在 `admin/dashboard/
+  page.tsx`(用等价的闭包 `cancelled` 标记代替 `requestIdRef`,见 Phase 8
+  前端补充)和 `admin/movies/page.tsx` 上原样复用,不是各自发明一遍——
+  以后任何"分页/筛选条件变化触发重新请求"的页面,应该默认照抄这个模式,
+  不要重新设计一个独立的 loading 布尔值。
+- **登录成功后,ADMIN 一律跳 `/admin/dashboard`,忽略 `?from=` 参数**:
+  `LoginForm` 原本对所有角色都跳 `?from=` 指定的地址(默认 `/profile`),
+  这对 ADMIN 账号是错的——如果 ADMIN 是从一个顾客端页面(比如首页的
+  "去登录"链接)触发的登录,跳回 `?from=` 会让他登录后落在一个顾客端页面
+  上,而不是 admin 语境。修复是 `login()` 的返回类型从 `Promise<void>`
+  改成 `Promise<AuthResponse>`(向后兼容,原来丢弃返回值的调用方不受
+  影响),`LoginForm` 读取 `session.user.role === "ADMIN"` 时无条件跳
+  `/admin/dashboard`,`CUSTOMER` 才遵循 `redirectTo`。这条规则和
+  `admin/layout.tsx`/`(customer)` 页面里那几处"ADMIN 反向隔离"检查
+  (见下面一节)方向一致:整个登录后的路由分发都是"ADMIN 永远进 admin
+  语境,不看上下文",不是登录这一步单独破例。
 
 #### 单元测试覆盖:AdminUserService(Mockito)+ AdminUserFlowIntegrationTest(Testcontainers)
 
@@ -1626,6 +1660,10 @@ Sprint 4 给 `AdminHeader` 加了 Dashboard/Movies/Users 三个导航链接,但�
 `/api/v1/movies/**`,ADMIN-only 的 CRUD 走 Swagger/curl,没有配套前端页面),
 给它单独建一个 admin CRUD 页面是比"移除一个死链接"大得多的工作量,不属于
 这次任务范围,以后要做再单独排期。
+
+**这条决定后来被推翻**:2026-08-12"Admin 电影管理页面 `/admin/movies`"一节
+交付了真正的电影管理页面,导航项也随之恢复。原文保留在这里是当时的真实
+判断(范围收窄是当时任务下的正确决定),不是错误,只是后来范围变了。
 
 ### 技术栈降级:Java 25 + Spring Boot 4.1 → Java 21 LTS + Spring Boot 3.5.15(2026-08-11)
 
