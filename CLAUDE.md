@@ -1904,24 +1904,60 @@ build`/`lint` 也不会报,只有真的把图渲染到浏览器里才会暴露�
     默认值 `false`;"If you need to optimize remote images hosted elsewhere
     in your local network, you can set the value to true."
 
-**实现:`next.config.ts` 新增 `images.dangerouslyAllowLocalIP`,按后端
-origin 是否回环地址动态决定,不是无条件打开**——和后端
-`app.security.cookie-secure`(`application.yml` 默认开,只有
-`application-local.yml` 关掉,见 Phase 1)是同一个思路,只不过前端没有
-Spring 那种 profile 机制,改成直接复用 `next.config.ts` 里已经在读的
-`NEXT_PUBLIC_API_BASE_URL`(这个值本来就用来生成 `remotePatterns`)反推:
+**实现,第一版(被合并前的复核推翻,不是最终方案)**:`next.config.ts` 新增
+`images.dangerouslyAllowLocalIP`,按 `NEXT_PUBLIC_API_BASE_URL` 的 hostname
+是不是字面量 `localhost`/`127.0.0.1`/`::1` 来反推"是不是本地开发",反推为真
+就打开这个开关。提交之后、开 PR 之前的复核问出了两个直接命中的真实问题:
+
+1. **字符串匹配不是环境判断,分不清"本地开发"和"生产环境的后端 origin
+   碰巧也叫 localhost"**——同机反向代理场景下(前端和后端部署在同一台机器,
+   通过内部 `localhost` 互通)生产环境完全可能合法地把
+   `NEXT_PUBLIC_API_BASE_URL` 配成 `http://localhost:xxxx`,这时字符串匹配
+   会误判成本地开发,把生产环境的 SSRF 防护也关掉。
+2. **`NEXT_PUBLIC_API_BASE_URL` 缺失时的兜底值本身是 `http://localhost:8081`
+   ——hostname 恰好也是 `localhost`,导致"环境变量缺失/读取失败"这个应该
+   选更安全一侧(`false`)的场景,反而被判成 `true`**。而且这不是假设情景:
+   `.github/workflows/ci.yml` 的 `frontend` job 跑 `npm run build` 时完全
+   没有设置这个环境变量,复核时直接拿 CI 的真实条件(临时移走
+   `.env.local`、不设任何环境变量)本地重跑构建验证过——第一版逻辑下,CI
+   打出来的生产构建产物里 `dangerouslyAllowLocalIP` 真的是 `true`。
+
+**最终方案:改成一个独立的、显式的 opt-in 环境变量
+`NEXT_ALLOW_LOCAL_IMAGE_OPTIMIZATION`,不再从 `NEXT_PUBLIC_API_BASE_URL`
+反推**——这个值只有字面量等于 `"true"` 才生效,其余任何情况(未设置、拼错、
+CI、任何真实部署)一律是安全的 `false`,不存在"猜错"的空间。仍然要求
+`backendIsLoopback`(hostname 命中回环地址)同时成立才真正打开
+`dangerouslyAllowLocalIP`,这一层判断保留下来只是让代码本身能自解释"这个
+开关真的只在后端是本地地址时才有意义",不是安全判断的主要依据——真正决定
+开不开的是那个必须显式设置的 opt-in 变量:
 ```ts
 const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 const backendIsLoopback = LOOPBACK_HOSTNAMES.has(apiBaseUrl.hostname);
+const localImageOptimizationOptIn =
+  process.env.NEXT_ALLOW_LOCAL_IMAGE_OPTIMIZATION === "true";
+const allowLocalImageOptimization = backendIsLoopback && localImageOptimizationOptIn;
 // ...
 images: {
-  ...(backendIsLoopback ? { dangerouslyAllowLocalIP: true } : {}),
+  ...(allowLocalImageOptimization ? { dangerouslyAllowLocalIP: true } : {}),
   remotePatterns: [...],
 }
 ```
-后端 origin 配成真实域名(生产场景)时这个值天然是 `false`(默认最安全的
-状态),图片优化完整保留;只有本地开发这种后端就是 `localhost`/`127.0.0.1`
-的场景才会打开这个豁免,不是全局无差别放开。
+这才是真正对应后端 `app.security.cookie-secure` 那个思路的版本——
+`SPRING_PROFILES_ACTIVE` 是一个专门用来声明"当前是什么环境"的独立信号,不是
+从数据库连接串之类的旁路信息反推出来的,第一版恰恰是拿一个"要请求哪个
+URL"的变量去顺带回答一个不相关的安全姿态问题,这是原设计的根本问题所在,
+不只是"多加一个环境变量"这么表面。
+
+**三点都重新用实际构建验证过,不是只看代码**:
+1. 完全模拟 CI 条件(挪走 `.env.local`、不设任何环境变量)构建,读取
+   `.next/required-server-files.json`,确认 `dangerouslyAllowLocalIP:
+   false`。
+2. 正常本地开发配置(`.env.local` 里只有 `NEXT_PUBLIC_API_BASE_URL`,不设
+   opt-in 变量)构建,同样确认是 `false`——不小心漏设 opt-in 变量的本地
+   开发者也不会意外打开这个豁免。
+3. `.env.local` 里显式加上 `NEXT_ALLOW_LOCAL_IMAGE_OPTIMIZATION=true` 构建,
+   确认变成 `true`,并重新跑了一遍下面的 Playwright 图片渲染验证,结果不变
+   (依然全部解码成功)。
 
 **影响范围核对**:全仓库 `resolveMediaUrl` 的调用点核对了一遍——
 `movie-card.tsx`、`movie-backdrop.tsx`(`hero-carousel.tsx`/电影详情页共用
@@ -1955,7 +1991,11 @@ URL 下载下来的正常尺寸 JPEG(380×562)重新测,编辑页海报/背景�
 
 **结论**:修复生效,已经用真实浏览器验证过(不是只信 `next.config.ts`
 配置正确、也不是只信没有 400 了),`/admin/movies` 的上传→预览这条链路
-现在端到端可用。
+现在端到端可用;开关本身也补了三种场景的真实构建验证(CI 条件/正常本地
+开发未 opt-in/显式 opt-in),不存在"环境变量缺失就默认打开"或"生产环境
+恰好也叫 localhost 就被误判"这两个第一版真实存在过的问题。相关的
+`frontend/.env.example`、`docs/DEVELOPMENT.md` 也同步补了这个新变量的
+说明。
 
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
