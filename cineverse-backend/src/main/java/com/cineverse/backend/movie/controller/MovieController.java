@@ -2,6 +2,7 @@ package com.cineverse.backend.movie.controller;
 
 import com.cineverse.backend.movie.dto.MovieRequest;
 import com.cineverse.backend.movie.dto.MovieResponse;
+import com.cineverse.backend.movie.dto.UpdateMovieImageUrlsRequest;
 import com.cineverse.backend.movie.entity.MovieStatus;
 import com.cineverse.backend.movie.service.MovieService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -17,6 +18,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -92,5 +94,16 @@ public class MovieController {
             @PathVariable UUID id,
             @Parameter(description = "图片文件") @RequestParam("file") MultipartFile file) {
         return movieService.updateBackdrop(id, file);
+    }
+
+    @PatchMapping("/{id}/image-urls")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(
+            summary = "直接设置海报/背景图为外部 URL(热链,不上传文件)",
+            description = "仅 ADMIN;局部更新——只设置请求体里非空的字段,另一个字段留空则保持不变。"
+                    + "用于 TMDB 搜索预填创建流程,不经过 StorageService")
+    public MovieResponse updateImageUrls(
+            @PathVariable UUID id, @Valid @RequestBody UpdateMovieImageUrlsRequest request) {
+        return movieService.updateImageUrls(id, request);
     }
 }

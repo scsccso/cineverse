@@ -592,3 +592,40 @@ mvn test -Dtest=AdminUserServiceTest,AdminUserFlowIntegrationTest
 `@CreationTimestamp`/`@UpdateTimestamp`(目前是 `save`/`saveAndFlush` 而不是
 别的方法名的问题,`delete`/`findById` 等不受这条规则约束),提交前跑一次
 本地全量 `mvn clean test` 比只跑 `mvn compile` 更接近 CI 真实会检查的范围。
+
+## Admin Movie TMDB 搜索(2026-08-13)
+
+需要先在 `.env` 里配置 `TMDB_API_KEY`(免费 v3 key,去 themoviedb.org
+的 Settings -> API 申请)才能走通搜索这一步——没配置的话下面前两个接口
+会返回 502,不是这几个 curl 命令本身有问题,是预期内的降级行为(见
+CLAUDE.md 对应小节)。
+
+```bash
+ADMIN_TOKEN="<用 admin@cineverse.local / Admin@12345 登录拿到的 accessToken>"
+
+# 搜索(只返回 title/年份/海报缩略图,不含简介/时长)
+curl -s "http://localhost:8081/api/v1/admin/movies/tmdb-search?query=Interstellar" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+
+# 选中某一条后拉完整详情(简介/时长/预告片/海报/背景图)——tmdbId 从上面
+# 搜索结果的 tmdbId 字段来
+curl -s "http://localhost:8081/api/v1/admin/movies/tmdb-search/157336" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+
+# 把上一步拿到的图片地址直接写到某部电影上(热链,不下载转存;PATCH 是
+# 局部更新——只传其中一个字段,另一个字段维持原样不受影响)
+curl -s -i -X PATCH "http://localhost:8081/api/v1/movies/<movie-id>/image-urls" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"posterUrl":"https://image.tmdb.org/t/p/w500/xxx.jpg","backdropUrl":"https://image.tmdb.org/t/p/w1280/yyy.jpg"}'
+```
+
+未登录 `401`;登录了但角色是 `CUSTOMER` `403`(和其余 `/api/v1/admin/**`
+接口同一套语义,`image-urls` 这个接口虽然挂在 `/api/v1/movies/**` 下,
+但同样是 ADMIN-only)。
+
+本地跑这个模块的测试:
+
+```bash
+cd cineverse-backend
+mvn test -Dtest=AdminMovieTmdbServiceTest,TmdbGatewayImplTest,AdminMovieTmdbFlowIntegrationTest,MovieAdminFlowIntegrationTest
+```

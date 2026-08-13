@@ -62,6 +62,11 @@ app:
     # Dev-only fallback, same reasoning as the JWT secrets above — forging a
     # ticket isn't a financial exposure the way a leaked Stripe key is.
     signing-secret: ${TICKET_SIGNING_SECRET:dev-only-ticket-secret-change-me-please-32bytes-min}
+  tmdb:
+    # Blank default, unlike Stripe's absent one — see TmdbProperties. A
+    # missing key only disables the admin movie-creation search convenience,
+    # not anything a customer-facing flow depends on.
+    api-key: ${TMDB_API_KEY:}
 
 springdoc:
   swagger-ui:

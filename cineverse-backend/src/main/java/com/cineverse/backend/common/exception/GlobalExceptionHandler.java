@@ -5,6 +5,7 @@ import com.cineverse.backend.auth.exception.InvalidCredentialsException;
 import com.cineverse.backend.auth.exception.InvalidRefreshTokenException;
 import com.cineverse.backend.booking.exception.SeatUnavailableException;
 import com.cineverse.backend.movie.exception.MovieHasScheduledShowtimesException;
+import com.cineverse.backend.movie.exception.TmdbGatewayException;
 import com.cineverse.backend.payment.exception.InvalidStripeSignatureException;
 import com.cineverse.backend.report.exception.InvalidReportRangeException;
 import com.cineverse.backend.showtime.exception.ShowtimeConflictException;
@@ -77,6 +78,20 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MovieHasScheduledShowtimesException.class)
     public ResponseEntity<ErrorResponse> handleMovieHasScheduledShowtimes(MovieHasScheduledShowtimesException ex) {
         return build(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(TmdbGatewayException.class)
+    public ResponseEntity<ErrorResponse> handleTmdbGateway(TmdbGatewayException ex) {
+        // 502, not the generic 500 handler below — this is TMDB (or a
+        // missing key) failing, not a bug in this app's own code. Logged
+        // here (not just left to the generic 500 handler) since 502s are
+        // otherwise easy to miss in ops. English message, matching every
+        // other handler in this class — the frontend's TMDB search UI
+        // translates this into a Chinese hint itself rather than the
+        // backend pre-translating one handler's messages and leaving the
+        // rest in English.
+        log.warn("TMDB gateway failure: {}", ex.getMessage());
+        return build(HttpStatus.BAD_GATEWAY, "TMDB search is temporarily unavailable");
     }
 
     @ExceptionHandler(ShowtimeHasBookingsException.class)

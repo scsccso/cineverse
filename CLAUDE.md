@@ -2035,6 +2035,101 @@ URL 下载下来的正常尺寸 JPEG(380×562)重新测,编辑页海报/背景�
 `frontend/.env.example`、`docs/DEVELOPMENT.md` 也同步补了这个新变量的
 说明。
 
+### 创建电影的主路径改成「从 TMDB 搜索选择」,手打表单降级为兜底(2026-08-13)
+
+`/admin/movies/new` 默认展示一个 TMDB 搜索框,选中一条结果后自动预填创建
+表单;手打字段还在,只是从"唯一路径"降级成一个不起眼的"找不到?手动创建"
+链接背后的兜底路径,不删除、不弱化其可用性。
+
+**新增两类接口**:
+
+- `GET /api/v1/admin/movies/tmdb-search?query=` + `GET .../tmdb-search/{tmdbId}`
+  (新 `AdminMovieTmdbController`,仅 ADMIN):后端代理 TMDB 的
+  `/search/movie` 和 `/movie/{id}`,前端拿到的是精简后的 DTO,TMDB 的
+  API key 全程不经过浏览器——和 `OMDB_API_KEY` 从未出现在前端是同一个
+  理由(见"种子数据的海报图来源"一节)。**没有加 `@PreAuthorize`**:和
+  项目其余 admin 接口一样,靠 `SecurityConfig` 的 URL 级
+  `.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")` 保护——这正是
+  `antigravity.md` 记录过的那次教训(`AdminUserController` 曾经加过一个
+  静默失效的 `@PreAuthorize`),这次直接照抄已验证的模式,没有重蹈。
+- `PATCH /api/v1/movies/{id}/image-urls`(新增在**已有的** `MovieController`
+  上,不是新 controller):直接把 `posterUrl`/`backdropUrl` 设成给定的外部
+  URL 字符串,不经过 `StorageService`,不上传不转存——这是让 TMDB 热链图
+  真正落到 `movies` 表所必需的一个环节,`POST /api/v1/movies` 本身完全
+  没有改。
+
+**为什么是 `PATCH` 新增一个字段(方案 B),不是给 `MovieRequest` 加
+`posterUrl`/`backdropUrl` 字段(方案 A)**:方案 A 最直接,但
+`MovieRequest` 同时被 `PUT`(全量替换语义)复用——`genreIds` 当初就是
+因为全量替换踩过一次坑,才有了编辑页必须回填 `genreIds` 这条规则(见
+"Admin 电影管理页面"一节)。如果 `posterUrl`/`backdropUrl` 也进
+`MovieRequest`,编辑页每次保存都要连带传回这两个字段,否则全量替换会把
+已经设置好的图片悄悄清空——等于在一个刚刚才补上防护的地方,又开一个新的
+同类型豁口。方案 B(独立的 `PATCH` 端点,局部更新语义)完全不碰
+`MovieRequest`/`PUT`,不给编辑页引入任何新的"忘记带某个字段就会丢数据"
+的风险。这个 `PATCH` 局部更新语义和 `PATCH /api/v1/admin/users/{id}/role`
+是同一个既有先例,不是这次新发明的模式。
+
+**为什么 genre / 分级 / 评分不跟着 TMDB 自动填**:TMDB 的 genre 体系和
+这个项目固定的 15 个值不是一一对应关系,分级口径(TMDB 没有统一的
+MPAA/LPF 分级字段)也对不上——和种子数据阶段"OMDb 标签不能直译成本项目
+genre"是同一个结论(见"种子数据扩充"一节的 `Oppenheimer` 例子)。这四个
+字段(`contentRating`/`userRating`/`status`/`genreIds`)不管电影是搜出来
+的还是手打的,一律留给 admin 自己填——不是遗漏,是不做看似省事、实则可能
+糊弄出错误数据的自动映射。
+
+**为什么图片是热链,不下载转存**:和现有 11 部种子电影的处理方式完全
+一致(见"种子数据的海报图来源"一节)——`PATCH .../image-urls` 直接存
+TMDB 返回的 `image.tmdb.org` URL,不经过 `StorageService.store()`。
+
+**TMDB 调用次数,按具体交互动作数**:输入片名后按 Enter/点搜索按钮才发起
+搜索(不是打字实时搜索,省掉防抖复杂度,也避免逐字符打字触发一堆搜索
+请求)——1 次 TMDB 调用。点选中某一条结果——1 次 TMDB 调用
+(`/movie/{id}?append_to_response=videos`,预告片信息用 `append_to_response`
+和详情合并成一次请求,不是先查详情再单独查预告片)。没被选中的搜索结果
+不会触发任何额外调用,也没有做分页(只取 TMDB 第一页,最多 20 条——
+排不进第一页就换个搜索词,不做"翻页找电影"这种体验)。
+
+**TMDB 调用失败的降级行为**:`TmdbGatewayException`(覆盖"key 没配置"
+和"TMDB 调用本身失败"两种情况,前端不需要区分,反正都是同一句"暂时不可用,
+请手动填写")经 `GlobalExceptionHandler` 映射成 502(不是通用 500 handler
+兜底的那种)——这是上游服务失败,不是这个项目自己代码的 bug。消息本身是
+英文,和 `GlobalExceptionHandler` 里其余所有 handler 保持一致(不是单独
+给这一个 handler 换成中文,那样整个错误信封会中英文夹杂);中文提示由
+**前端**的 `TmdbSearchPicker` 组件自己翻译展示,不依赖后端预翻译。
+
+**`MovieForm` 的 `onSaved` 改成可以返回 `Promise`**:因为创建流程现在
+多了一步"创建成功后,如果是 TMDB 预填的,再调一次 `PATCH .../image-urls`
+把图片地址应用上去"——如果这一步失败(网络抖动等),不能让它悄悄失败:
+`/admin/movies/new/page.tsx` 会带着 `?imageSetupFailed=1` 跳转到编辑页,
+编辑页顶部显示一条明确的"电影已创建,但海报/背景图设置失败,请在下方
+手动上传"提示(复用已有的 `AnimatedFormBanner` 一次性提示机制,和
+"电影已创建...现在可以上传海报/背景图"那条是同一套机制,不是新造一个)。
+如果 TMDB 预填但两张图都设置成功,则**不显示**"已创建"提示——编辑页
+下方海报/背景图卡片本身已经显示的是真实图片而不是占位图,这就是确认,
+再显示一条"现在可以上传"的提示反而是过时的指引。
+
+**已知合规缺口,这次没有处理,按你的决定等后续单独一轮**:CLAUDE.md 已经
+记录过 TMDB 免费层要求署名(官方 logo + 指定文案,见"backdrop 和 poster
+分别用两个不同数据源"一节),这次是第一次让后端在运行时真正主动调用
+TMDB(不只是种子数据阶段的一次性脚本),这个缺口的相关性比之前更高了一点,
+但仍然不在这次改动范围内。
+
+**验证边界,如实记录**:后端 `mvn clean test` 160/160 全绿(新增
+`AdminMovieTmdbServiceTest` 纯 mapping 单元测试、`TmdbGatewayImplTest`
+空 key 单元测试、`AdminMovieTmdbFlowIntegrationTest` 集成测试——401/403/
+mock 网关成功/mock 网关失败,均使用 `@MockitoBean` 替换 `TmdbGateway`,
+不依赖真实网络调用 TMDB,和 `PaymentFlowIntegrationTest` mock
+`StripeCheckoutGateway` 是同一个模式)。`npm run build`/`npm run lint`
+干净。**这个会话没有真实的 `TMDB_API_KEY`**,用 Playwright 在一个没有配置
+key 的隔离后端实例上实测了"没配置 key 时的降级路径"(搜索请求真实收到
+502、前端正确显示中文兜底提示、点"找不到?手动创建"能正常切换、手动创建
+流程完整走通、清理干净)——**但没有真实验证过 TMDB 搜索真的返回结果、
+选中结果后表单被正确预填、图片 URL 真的写入数据库这条"key 配置正确"
+的成功路径**,这条路径目前只有集成测试(mock 网关)覆盖,没有拿真实
+TMDB API 在浏览器里跑过一遍。这个边界如实记录在这里,等有真实 key 可用
+再补一次真实验证。
+
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
 - 评价评分

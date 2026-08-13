@@ -61,9 +61,11 @@ export interface MovieResponse {
 /** Shared body shape for both POST (create) and PUT (full replace) — mirrors
  * the backend's MovieRequest record exactly, including that PUT is a full
  * replace: submitting genreIds always overwrites the movie's entire genre
- * set, never merges with what was there before. No image fields — poster/
- * backdrop only upload via their own multipart endpoints once the movie
- * already has an id (see uploadMoviePoster/uploadMovieBackdrop). */
+ * set, never merges with what was there before. No image fields — an image
+ * only ever reaches a movie via the separate multipart upload endpoints
+ * (uploadMoviePoster/uploadMovieBackdrop) or the PATCH .../image-urls
+ * hotlink endpoint (setMovieImageUrls, used by the TMDB-prefilled create
+ * flow), never through create/update itself. */
 export interface MovieRequest {
   title: string;
   description: string | null;
@@ -74,6 +76,35 @@ export interface MovieRequest {
   trailerUrl: string | null;
   status: MovieStatus;
   genreIds: string[];
+}
+
+/** GET /api/v1/admin/movies/tmdb-search — deliberately minimal, just enough
+ * to visually pick the right movie out of a list. No overview/runtime; see
+ * TmdbMovieDetail for what selecting a result fetches. */
+export interface TmdbSearchResult {
+  tmdbId: number;
+  title: string;
+  /** Null if TMDB has no release date on file. */
+  releaseYear: string | null;
+  /** Null if TMDB has no poster for this title. */
+  posterUrl: string | null;
+}
+
+/** GET /api/v1/admin/movies/tmdb-search/{tmdbId} — prefill data for the
+ * create form. No contentRating/userRating/status/genreIds: TMDB's
+ * taxonomy doesn't map cleanly onto this project's fixed genre list or
+ * MPAA-style rating, so those stay admin-filled either way. */
+export interface TmdbMovieDetail {
+  tmdbId: number;
+  title: string;
+  description: string | null;
+  durationMinutes: number | null;
+  /** youtube.com watch URL for the preferred trailer, or null if TMDB has none. */
+  trailerUrl: string | null;
+  /** Hotlinked TMDB URL — never re-hosted. */
+  posterUrl: string | null;
+  /** Hotlinked TMDB URL — never re-hosted. */
+  backdropUrl: string | null;
 }
 
 /** Matches Spring Data's default (unwrapped) Page<T> JSON — see MovieController. */

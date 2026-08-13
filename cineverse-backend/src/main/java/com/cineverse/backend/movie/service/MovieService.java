@@ -2,6 +2,7 @@ package com.cineverse.backend.movie.service;
 
 import com.cineverse.backend.movie.dto.MovieRequest;
 import com.cineverse.backend.movie.dto.MovieResponse;
+import com.cineverse.backend.movie.dto.UpdateMovieImageUrlsRequest;
 import com.cineverse.backend.movie.entity.Genre;
 import com.cineverse.backend.movie.entity.Movie;
 import com.cineverse.backend.movie.entity.MovieStatus;
@@ -109,6 +110,29 @@ public class MovieService {
         movie.setBackdropUrl(storageService.store(file));
         movieRepository.saveAndFlush(movie);
         storageService.delete(oldUrl);
+        return movieMapper.toResponse(movie);
+    }
+
+    /** Sets whichever of posterUrl/backdropUrl are present directly on the
+     * entity — no StorageService.store() call, this hotlinks an external
+     * URL (e.g. from the TMDB search flow) rather than uploading a file.
+     * Still routes the old value through storageService.delete() first,
+     * same as updatePoster/updateBackdrop: it's a safe no-op for a URL that
+     * was never locally stored (see LocalStorageService.delete's baseUrl
+     * prefix check), and cleans up an orphaned local file if the movie
+     * previously had one. */
+    @Transactional
+    public MovieResponse updateImageUrls(UUID id, UpdateMovieImageUrlsRequest request) {
+        Movie movie = findMovieOrThrow(id);
+        if (request.posterUrl() != null) {
+            storageService.delete(movie.getPosterUrl());
+            movie.setPosterUrl(request.posterUrl());
+        }
+        if (request.backdropUrl() != null) {
+            storageService.delete(movie.getBackdropUrl());
+            movie.setBackdropUrl(request.backdropUrl());
+        }
+        movieRepository.saveAndFlush(movie);
         return movieMapper.toResponse(movie);
     }
 
