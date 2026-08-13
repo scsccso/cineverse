@@ -4,6 +4,7 @@ import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -12,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.cineverse.backend.auth.dto.LoginRequest;
 import com.cineverse.backend.auth.dto.RegisterRequest;
 import com.cineverse.backend.movie.dto.MovieRequest;
+import com.cineverse.backend.movie.dto.UpdateMovieImageUrlsRequest;
 import com.cineverse.backend.movie.entity.MovieStatus;
 import com.cineverse.backend.showtime.dto.CreateShowtimeRequest;
 import java.math.BigDecimal;
@@ -172,6 +174,12 @@ class MovieAdminFlowIntegrationTest {
 
         mockMvc.perform(delete("/api/v1/movies/{id}", movieId))
                 .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(patch("/api/v1/movies/{id}/image-urls", movieId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new UpdateMovieImageUrlsRequest("https://example.com/p.jpg", null))))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -201,6 +209,48 @@ class MovieAdminFlowIntegrationTest {
         mockMvc.perform(delete("/api/v1/movies/{id}", movieId)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken))
                 .andExpect(status().isForbidden());
+
+        mockMvc.perform(patch("/api/v1/movies/{id}/image-urls", movieId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new UpdateMovieImageUrlsRequest("https://example.com/p.jpg", null))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminCanSetImageUrlsDirectlyAsAPartialUpdateBypassingUpload() throws Exception {
+        String accessToken = loginAsAdmin();
+        UUID genreId = firstGenreId();
+        UUID movieId = createMovie(accessToken, "TMDB Hotlink " + UUID.randomUUID(), genreId);
+
+        // Only posterUrl set — backdropUrl omitted/null must leave the
+        // existing (placeholder) backdrop untouched, matching PATCH's
+        // partial-update semantics (not PUT's full replace).
+        mockMvc.perform(patch("/api/v1/movies/{id}/image-urls", movieId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateMovieImageUrlsRequest(
+                                "https://image.tmdb.org/t/p/w500/poster.jpg", null))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.posterUrl").value("https://image.tmdb.org/t/p/w500/poster.jpg"))
+                .andExpect(jsonPath("$.backdropUrl").value("/images/no-backdrop.svg"));
+
+        // A second call setting only backdropUrl must leave the posterUrl
+        // set above untouched.
+        mockMvc.perform(patch("/api/v1/movies/{id}/image-urls", movieId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateMovieImageUrlsRequest(
+                                null, "https://image.tmdb.org/t/p/w1280/backdrop.jpg"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.posterUrl").value("https://image.tmdb.org/t/p/w500/poster.jpg"))
+                .andExpect(jsonPath("$.backdropUrl").value("https://image.tmdb.org/t/p/w1280/backdrop.jpg"));
+
+        mockMvc.perform(get("/api/v1/movies/{id}", movieId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.posterUrl").value("https://image.tmdb.org/t/p/w500/poster.jpg"))
+                .andExpect(jsonPath("$.backdropUrl").value("https://image.tmdb.org/t/p/w1280/backdrop.jpg"));
     }
 
     @Test

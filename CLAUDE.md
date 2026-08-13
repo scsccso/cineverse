@@ -154,6 +154,14 @@
   默认标准,admin 页面同样遵守,具体应用见 Phase 8 前端补充里图表/筛选器/
   导出按钮各自的说明,这里不重复。
 
+**补充(2026-08-14,同 1.5.2 那条一样是补前提、不重写本节)**:开头"`/admin/**`
+下的页面(目前是 `/admin/dashboard`)"这个前提已经过时——现在是
+`/admin/dashboard`、`/admin/movies`(含 `/new`、`/[id]/edit`)、`/admin/users`。
+本节的结论(admin 不用 Liquid Glass、用 `Card` 的浅色平面视觉)对这些后加的
+页面同样适用,而且确实被援引过:`/admin/movies/new` 的 TMDB 搜索结果网格
+(见下面 2026-08-14 那条)就是按这条边界做的——海报网格用 `Card` 的视觉
+token,没有引入 `GlassCard` 或指针跟随高光。
+
 ### 1.5.2 Admin 拥有完全独立的导航 shell,不复用顾客端 Navbar(2026-08-06)
 
 Phase 8 交付时 `.admin-light` 只解决了**内容区**的主题反转(见 1.5.1),但顶部
@@ -910,6 +918,15 @@ GET),但对跨站的 XHR/fetch、跨站 POST 仍然和 `Strict` 一样不带 coo
   三处几乎相同的 opacity+y 入场动画(此前都没做 reduced-motion 判断)合并成
   一个共享的 `components/motion/fade-in.tsx`(`<FadeIn>`),内置判断,三处
   改成直接调用它,不再各自维护一份。
+  **补充(2026-08-14):这条"补全"的覆盖范围不完整,当时的结论下早了**——
+  这次审计扫的是 `components/motion/` 下的组件和 `seat-map.tsx`,漏掉了
+  `components/ui/skeleton.tsx` 这个共享的 shadcn `Skeleton`:它的默认
+  className 里有 `animate-pulse` 但没有 `motion-reduce:animate-none`,所以
+  在 `prefers-reduced-motion` 下依然脉动(顾客端的 `GlassSkeleton` 是有的,
+  两者不一致)。**留作后续钩子,不在这里展开**:下次做前端无障碍相关工作时
+  一并处理——修法本身是一行,但会同时改变 `(customer)/profile`、
+  `(customer)/bookings`、`admin/layout`、`report-card-skeleton`、
+  `navbar`、`admin/dashboard` 这几个调用点的渲染行为,值得单独确认一次。
 - **新增 `app/(customer)/error.tsx` + `not-found.tsx`(暗色,复用
   `GlassCard`)、`app/admin/error.tsx` + `not-found.tsx`(浅色,复用
   `Card`)**:此前完全没有,`movies/[id]`/`showtimes/[id]` 页面已有的
@@ -2034,6 +2051,158 @@ URL 下载下来的正常尺寸 JPEG(380×562)重新测,编辑页海报/背景�
 恰好也叫 localhost 就被误判"这两个第一版真实存在过的问题。相关的
 `frontend/.env.example`、`docs/DEVELOPMENT.md` 也同步补了这个新变量的
 说明。
+
+### 创建电影的主路径改成「从 TMDB 搜索选择」,手打表单降级为兜底(2026-08-13)
+
+`/admin/movies/new` 默认展示一个 TMDB 搜索框,选中一条结果后自动预填创建
+表单;手打字段还在,只是从"唯一路径"降级成一个不起眼的"找不到?手动创建"
+链接背后的兜底路径,不删除、不弱化其可用性。
+
+**新增两类接口**:
+
+- `GET /api/v1/admin/movies/tmdb-search?query=` + `GET .../tmdb-search/{tmdbId}`
+  (新 `AdminMovieTmdbController`,仅 ADMIN):后端代理 TMDB 的
+  `/search/movie` 和 `/movie/{id}`,前端拿到的是精简后的 DTO,TMDB 的
+  API key 全程不经过浏览器——和 `OMDB_API_KEY` 从未出现在前端是同一个
+  理由(见"种子数据的海报图来源"一节)。**没有加 `@PreAuthorize`**:和
+  项目其余 admin 接口一样,靠 `SecurityConfig` 的 URL 级
+  `.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")` 保护——这正是
+  `antigravity.md` 记录过的那次教训(`AdminUserController` 曾经加过一个
+  静默失效的 `@PreAuthorize`),这次直接照抄已验证的模式,没有重蹈。
+- `PATCH /api/v1/movies/{id}/image-urls`(新增在**已有的** `MovieController`
+  上,不是新 controller):直接把 `posterUrl`/`backdropUrl` 设成给定的外部
+  URL 字符串,不经过 `StorageService`,不上传不转存——这是让 TMDB 热链图
+  真正落到 `movies` 表所必需的一个环节,`POST /api/v1/movies` 本身完全
+  没有改。
+
+**为什么是 `PATCH` 新增一个字段(方案 B),不是给 `MovieRequest` 加
+`posterUrl`/`backdropUrl` 字段(方案 A)**:方案 A 最直接,但
+`MovieRequest` 同时被 `PUT`(全量替换语义)复用——`genreIds` 当初就是
+因为全量替换踩过一次坑,才有了编辑页必须回填 `genreIds` 这条规则(见
+"Admin 电影管理页面"一节)。如果 `posterUrl`/`backdropUrl` 也进
+`MovieRequest`,编辑页每次保存都要连带传回这两个字段,否则全量替换会把
+已经设置好的图片悄悄清空——等于在一个刚刚才补上防护的地方,又开一个新的
+同类型豁口。方案 B(独立的 `PATCH` 端点,局部更新语义)完全不碰
+`MovieRequest`/`PUT`,不给编辑页引入任何新的"忘记带某个字段就会丢数据"
+的风险。这个 `PATCH` 局部更新语义和 `PATCH /api/v1/admin/users/{id}/role`
+是同一个既有先例,不是这次新发明的模式。
+
+**为什么 genre / 分级 / 评分不跟着 TMDB 自动填**:TMDB 的 genre 体系和
+这个项目固定的 15 个值不是一一对应关系,分级口径(TMDB 没有统一的
+MPAA/LPF 分级字段)也对不上——和种子数据阶段"OMDb 标签不能直译成本项目
+genre"是同一个结论(见"种子数据扩充"一节的 `Oppenheimer` 例子)。这四个
+字段(`contentRating`/`userRating`/`status`/`genreIds`)不管电影是搜出来
+的还是手打的,一律留给 admin 自己填——不是遗漏,是不做看似省事、实则可能
+糊弄出错误数据的自动映射。
+
+**为什么图片是热链,不下载转存**:和现有 11 部种子电影的处理方式完全
+一致(见"种子数据的海报图来源"一节)——`PATCH .../image-urls` 直接存
+TMDB 返回的 `image.tmdb.org` URL,不经过 `StorageService.store()`。
+
+**TMDB 调用次数,按具体交互动作数**:输入片名后按 Enter/点搜索按钮才发起
+搜索(不是打字实时搜索,省掉防抖复杂度,也避免逐字符打字触发一堆搜索
+请求)——1 次 TMDB 调用。点选中某一条结果——1 次 TMDB 调用
+(`/movie/{id}?append_to_response=videos`,预告片信息用 `append_to_response`
+和详情合并成一次请求,不是先查详情再单独查预告片)。没被选中的搜索结果
+不会触发任何额外调用,也没有做分页(只取 TMDB 第一页,最多 20 条——
+排不进第一页就换个搜索词,不做"翻页找电影"这种体验)。
+
+**TMDB 调用失败的降级行为**:`TmdbGatewayException`(覆盖"key 没配置"
+和"TMDB 调用本身失败"两种情况,前端不需要区分,反正都是同一句"暂时不可用,
+请手动填写")经 `GlobalExceptionHandler` 映射成 502(不是通用 500 handler
+兜底的那种)——这是上游服务失败,不是这个项目自己代码的 bug。消息本身是
+英文,和 `GlobalExceptionHandler` 里其余所有 handler 保持一致(不是单独
+给这一个 handler 换成中文,那样整个错误信封会中英文夹杂);中文提示由
+**前端**的 `TmdbSearchPicker` 组件自己翻译展示,不依赖后端预翻译。
+
+**`MovieForm` 的 `onSaved` 改成可以返回 `Promise`**:因为创建流程现在
+多了一步"创建成功后,如果是 TMDB 预填的,再调一次 `PATCH .../image-urls`
+把图片地址应用上去"——如果这一步失败(网络抖动等),不能让它悄悄失败:
+`/admin/movies/new/page.tsx` 会带着 `?imageSetupFailed=1` 跳转到编辑页,
+编辑页顶部显示一条明确的"电影已创建,但海报/背景图设置失败,请在下方
+手动上传"提示(复用已有的 `AnimatedFormBanner` 一次性提示机制,和
+"电影已创建...现在可以上传海报/背景图"那条是同一套机制,不是新造一个)。
+如果 TMDB 预填但两张图都设置成功,则**不显示**"已创建"提示——编辑页
+下方海报/背景图卡片本身已经显示的是真实图片而不是占位图,这就是确认,
+再显示一条"现在可以上传"的提示反而是过时的指引。
+
+**已知合规缺口,这次没有处理,按你的决定等后续单独一轮**:CLAUDE.md 已经
+记录过 TMDB 免费层要求署名(官方 logo + 指定文案,见"backdrop 和 poster
+分别用两个不同数据源"一节),这次是第一次让后端在运行时真正主动调用
+TMDB(不只是种子数据阶段的一次性脚本),这个缺口的相关性比之前更高了一点,
+但仍然不在这次改动范围内。
+
+**验证边界,如实记录**:后端 `mvn clean test` 160/160 全绿(新增
+`AdminMovieTmdbServiceTest` 纯 mapping 单元测试、`TmdbGatewayImplTest`
+空 key 单元测试、`AdminMovieTmdbFlowIntegrationTest` 集成测试——401/403/
+mock 网关成功/mock 网关失败,均使用 `@MockitoBean` 替换 `TmdbGateway`,
+不依赖真实网络调用 TMDB,和 `PaymentFlowIntegrationTest` mock
+`StripeCheckoutGateway` 是同一个模式)。`npm run build`/`npm run lint`
+干净。**这个会话没有真实的 `TMDB_API_KEY`**,用 Playwright 在一个没有配置
+key 的隔离后端实例上实测了"没配置 key 时的降级路径"(搜索请求真实收到
+502、前端正确显示中文兜底提示、点"找不到?手动创建"能正常切换、手动创建
+流程完整走通、清理干净)——**但没有真实验证过 TMDB 搜索真的返回结果、
+选中结果后表单被正确预填、图片 URL 真的写入数据库这条"key 配置正确"
+的成功路径**,这条路径目前只有集成测试(mock 网关)覆盖,没有拿真实
+TMDB API 在浏览器里跑过一遍。这个边界如实记录在这里,等有真实 key 可用
+再补一次真实验证。
+
+#### 补充:搜索结果从文字列表改成海报网格(同一分支的第二个 commit,2026-08-14)
+
+上面那次交付只解决了"能不能搜到",没管"搜到之后好不好选"——初版结果列表是
+一行一条的纯文字布局,海报缩成 48px 的缩略图塞在行首。**内容形态和展示形态
+不匹配**:从搜索结果里挑一部电影是一个视觉识别任务("哪个才是我要的那部
+《沙丘》"),真正被扫的是海报而不是标题字符串,把海报压到 48px、让文字占据
+主要面积,等于把这个任务里最有辨识力的信息降到最次要的位置。改成海报为主体
+的网格卡片(海报占满卡片宽度、`aspect-[2/3]`,标题/年份放下方)。
+
+- **列数跟随容器宽度降级,用的是 `@container` 查询而不是视口断点**:这个组件
+  渲染在一个固定 `max-w-2xl` 的卡片里,视口宽度并不能描述它实际拿到的空间——
+  视口 1280px 时容器内容区其实只有 ~600px。用容器查询(`grid-cols-2
+  @md:grid-cols-3 @xl:grid-cols-4`)才是对"容器变窄就降列"这个需求的直接
+  表达。实测确认:1280px 视口下 4 列,560px 视口下 3 列。
+- **卡片复用的是 `Card` 组件的视觉 token,不是嵌套一个真的 `<Card>`**:
+  `rounded-xl`/`bg-card`/`ring-1 ring-foreground/10`/`shadow-sm` 这套值直接
+  加在 `<button>` 上。原因是 `Card` 的内边距模型假设"内容带 padding",而这里
+  要的是海报满幅出血;而且整张卡片本身就是按钮,把按钮塞进 `Card` 这个 `div`
+  里反而多一层嵌套。这和座位图"只复用 `--glass-*` token、不复用 `GlassCard`
+  组件本体"是同一类取舍(见 1.5 节)。**没有引入 `GlassCard`/指针跟随高光**
+  ——`/admin/**` 是浅色平面的设计系统例外,这条边界是 1.5.1 定的,这次没破例。
+- **选中态必须有即时视觉确认**:点一张卡片之后要先发一次详情请求才会切到
+  预填表单,这中间有一段真实的等待。初版在这段时间里除了一个小 spinner 没有
+  任何反馈,点击读起来像没生效,然后页面突然换掉——用户无法确认自己到底点中
+  了哪一部。现在选中的卡片立刻变成主题色描边 + 海报上盖一个「✓ 已选择」徽章,
+  同时其余卡片降到 40% 不透明度,三重编码(描边颜色 + 图标 + 兄弟项对比),
+  不只靠颜色区分(1.5 节的既有标准)。
+- **骨架屏解决的是一个具体的坏行为,不只是"填满空白"**:初版在重新搜索时,
+  按钮转 spinner,但**上一次搜索的结果原样留在下面**——读起来像是"这就是你
+  这次搜索的结果",而实际上是上一个关键词的。现在搜索期间用 6 个卡片形状的
+  骨架屏替换掉旧结果,消除的是这个误读,不是单纯为了不空着。
+- **无障碍**:卡片本体远大于 44×44(实测 138×260);骨架屏的 `animate-pulse`
+  显式加了 `motion-reduce:animate-none`(实测 `prefers-reduced-motion` 下
+  `animationName` 为 `none`);hover 的阴影/透明度过渡加了
+  `motion-reduce:transition-none`;海报 `alt=""`(装饰性,标题就在旁边)。
+- **这次是纯展示层改动,数据行为一行没动**:fetch 调用、request-id 防竞态、
+  搜索触发时机、选中后拉详情的次数全部原样。用 Playwright 专门回归验证过
+  (不是只看截图):故意让先发的慢请求(3.5s)在后发的快请求(200ms)之后
+  才返回,断言慢的那个**没有**覆盖掉新结果;选中后表单的
+  title/durationMinutes/trailerUrl/description 都被正确预填;详情接口每次
+  选中**只调用一次**;`contentRating`/`userRating` 仍然是空的(TMDB 不自动
+  映射这两个字段,见上面)。改造前后各截了 5 张图对比。
+
+**顺手发现的一个既有缺口(这次没有修,只标注)**:`components/ui/skeleton.tsx`
+这个共享的 shadcn `Skeleton` 组件自身**没有** `motion-reduce:animate-none`,
+所以它在 `prefers-reduced-motion` 下依然会脉动。顾客端的
+`GlassSkeleton`(`components/glass/glass-skeleton.tsx`)是有的,两者不一致。
+受影响的调用点:`(customer)/profile/page.tsx`、`(customer)/bookings/page.tsx`、
+`admin/layout.tsx`、`components/admin/report-card-skeleton.tsx`、
+`components/layout/navbar.tsx`、`admin/dashboard/page.tsx`——目前只有这次新写的
+`tmdb-search-picker.tsx` 在调用点手动补了这个类。这和"审计后修复(2026-08-08)"
+那一节声称的"`prefers-reduced-motion` 已经补全"对不上:那次审计覆盖的是
+`components/motion/` 下的组件和 `seat-map.tsx`,没有覆盖到这个共享
+`Skeleton`。修法是一行(在 `Skeleton` 的默认 className 里加上),但那会同时
+改变上面 6 个调用点的渲染行为,超出"只重做 `TmdbSearchPicker` 展示层"这次的
+范围,所以按"发现即标注"的惯例记在这里,不在这个 commit 里顺手改掉。
 
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分

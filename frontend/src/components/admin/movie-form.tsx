@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Check } from "lucide-react";
 import { movieFormSchema, type MovieFormInput, type MovieFormOutput } from "@/lib/validation/admin-movies";
-import type { GenreResponse, MovieRequest, MovieResponse, MovieStatus } from "@/lib/api/types";
+import type { GenreResponse, MovieRequest, MovieResponse, MovieStatus, TmdbMovieDetail } from "@/lib/api/types";
 import { ApiError } from "@/lib/api/client";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -20,32 +20,48 @@ const STATUS_OPTIONS: { value: MovieStatus; label: string }[] = [
   { value: "ENDED", label: "已下映" },
 ];
 
-function toDefaultValues(movie: MovieResponse | undefined): MovieFormInput {
-  if (!movie) {
+/** initialMovie (edit) and tmdbPrefill (create, TMDB-picked) are mutually
+ * exclusive — a plain blank create form has neither. contentRating/
+ * userRating/status/genreIds are never sourced from tmdbPrefill even when
+ * present, see TmdbMovieDetail's doc comment for why. */
+function toDefaultValues(movie: MovieResponse | undefined, tmdbPrefill: TmdbMovieDetail | undefined): MovieFormInput {
+  if (movie) {
     return {
-      title: "",
-      description: "",
+      title: movie.title,
+      description: movie.description ?? "",
+      tagline: movie.tagline ?? "",
+      durationMinutes: String(movie.durationMinutes),
+      contentRating: movie.contentRating ?? "",
+      userRating: movie.userRating !== null ? String(movie.userRating) : "",
+      trailerUrl: movie.trailerUrl ?? "",
+      status: movie.status,
+    };
+  }
+  if (tmdbPrefill) {
+    return {
+      title: tmdbPrefill.title,
+      description: tmdbPrefill.description ?? "",
       tagline: "",
-      durationMinutes: "",
+      durationMinutes: tmdbPrefill.durationMinutes !== null ? String(tmdbPrefill.durationMinutes) : "",
       contentRating: "",
       userRating: "",
-      trailerUrl: "",
-      // New movies default to low visibility, not straight to NOW_PLAYING —
-      // a freshly created movie shouldn't be customer-visible as "now
-      // playing" until an admin has actually reviewed it (poster uploaded,
-      // fields double-checked) and flips it over deliberately.
+      trailerUrl: tmdbPrefill.trailerUrl ?? "",
       status: "COMING_SOON",
     };
   }
   return {
-    title: movie.title,
-    description: movie.description ?? "",
-    tagline: movie.tagline ?? "",
-    durationMinutes: String(movie.durationMinutes),
-    contentRating: movie.contentRating ?? "",
-    userRating: movie.userRating !== null ? String(movie.userRating) : "",
-    trailerUrl: movie.trailerUrl ?? "",
-    status: movie.status,
+    title: "",
+    description: "",
+    tagline: "",
+    durationMinutes: "",
+    contentRating: "",
+    userRating: "",
+    trailerUrl: "",
+    // New movies default to low visibility, not straight to NOW_PLAYING —
+    // a freshly created movie shouldn't be customer-visible as "now
+    // playing" until an admin has actually reviewed it (poster uploaded,
+    // fields double-checked) and flips it over deliberately.
+    status: "COMING_SOON",
   };
 }
 
@@ -55,18 +71,37 @@ export interface MovieFormProps {
    * prefill genreIds, which (unlike every other field) isn't part of the
    * zod-validated schema below, see the comment on MovieFormOutput. */
   initialMovie?: MovieResponse;
+  /** Create-only, mutually exclusive with initialMovie — prefills from a
+   * TMDB search pick (admin/movies/new/page.tsx). */
+  tmdbPrefill?: TmdbMovieDetail;
   onSave: (request: MovieRequest) => Promise<MovieResponse>;
-  onSaved: (saved: MovieResponse) => void;
+  /** May return a Promise — awaited before isSubmitting/SubmitProgressBar
+   * clears, so a caller that does async follow-up work (e.g. applying TMDB
+   * image URLs post-create, see admin/movies/new/page.tsx) doesn't have the
+   * submit button flash back to its idle state before that work — and the
+   * subsequent navigation — actually finishes. A synchronous callback (the
+   * edit page's usage) satisfies this signature unchanged. */
+  onSaved: (saved: MovieResponse) => void | Promise<void>;
   submitLabel: string;
   submittingLabel: string;
 }
 
-export function MovieForm({ genres, initialMovie, onSave, onSaved, submitLabel, submittingLabel }: MovieFormProps) {
+export function MovieForm({
+  genres,
+  initialMovie,
+  tmdbPrefill,
+  onSave,
+  onSaved,
+  submitLabel,
+  submittingLabel,
+}: MovieFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
   // PUT replaces the movie's entire genre set — prefilling this from
   // initialMovie.genres is not cosmetic, it's what stops an edit-and-save
   // from silently wiping every genre association the movie already had
-  // (see the MovieRequest doc comment in lib/api/types.ts).
+  // (see the MovieRequest doc comment in lib/api/types.ts). tmdbPrefill
+  // never seeds this — TMDB's genre taxonomy doesn't map onto this
+  // project's fixed list, see TmdbMovieDetail's doc comment.
   const [genreIds, setGenreIds] = useState<string[]>(() => initialMovie?.genres.map((genre) => genre.id) ?? []);
 
   const {
@@ -75,7 +110,7 @@ export function MovieForm({ genres, initialMovie, onSave, onSaved, submitLabel, 
     formState: { errors, isSubmitting },
   } = useForm<MovieFormInput, unknown, MovieFormOutput>({
     resolver: zodResolver(movieFormSchema),
-    defaultValues: toDefaultValues(initialMovie),
+    defaultValues: toDefaultValues(initialMovie, tmdbPrefill),
   });
 
   function toggleGenre(id: string) {
@@ -86,7 +121,7 @@ export function MovieForm({ genres, initialMovie, onSave, onSaved, submitLabel, 
     setFormError(null);
     try {
       const saved = await onSave({ ...values, genreIds });
-      onSaved(saved);
+      await onSaved(saved);
     } catch (error) {
       // Shown as-is, not re-worded — GlobalExceptionHandler's messages
       // (e.g. the 409 duplicate/validation cases) are already written to be

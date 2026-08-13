@@ -32,10 +32,20 @@ export default function EditMoviePage() {
   // shouldn't keep re-showing it) but that's a router side effect, not a
   // state update, so it doesn't trip the same rule.
   const [justCreated, setJustCreated] = useState(() => searchParams.get("created") === "1");
+  // Set when the TMDB-prefilled create flow's follow-up "apply the TMDB
+  // image URLs" call fails after the movie itself was already created
+  // successfully (network blip, etc.) — must not fail silently, since the
+  // poster/backdrop preview below would otherwise just show the placeholder
+  // with no indication anything went wrong. Mutually exclusive with
+  // justCreated in practice (see admin/movies/new/page.tsx): the TMDB path
+  // sends this instead of ?created=1 when image setup fails, since "images
+  // already applied, nothing to do below" and "images failed, do something
+  // below" call for different messages, not the same generic one.
+  const [imageSetupFailed, setImageSetupFailed] = useState(() => searchParams.get("imageSetupFailed") === "1");
   const [savedBanner, setSavedBanner] = useState(false);
 
   useEffect(() => {
-    if (searchParams.get("created") === "1") {
+    if (searchParams.get("created") === "1" || searchParams.get("imageSetupFailed") === "1") {
       router.replace(`/admin/movies/${id}/edit`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,6 +97,14 @@ export default function EditMoviePage() {
           />
         </div>
       )}
+      {imageSetupFailed && (
+        <div className="mb-6">
+          <AnimatedFormBanner
+            variant="destructive"
+            message="电影已创建,但海报/背景图设置失败,请在下方手动上传。"
+          />
+        </div>
+      )}
       {savedBanner && (
         <div className="mb-6">
           <AnimatedFormBanner variant="success" message="修改已保存。" />
@@ -109,6 +127,7 @@ export default function EditMoviePage() {
                 onSaved={(saved) => {
                   setMovie(saved);
                   setJustCreated(false);
+                  setImageSetupFailed(false);
                   setSavedBanner(true);
                 }}
                 submitLabel="保存修改"

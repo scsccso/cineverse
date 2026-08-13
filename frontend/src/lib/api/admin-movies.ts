@@ -1,5 +1,13 @@
 import { apiFetch, ApiError } from "./client";
-import type { ErrorResponse, GenreResponse, MovieRequest, MovieResponse, Page } from "./types";
+import type {
+  ErrorResponse,
+  GenreResponse,
+  MovieRequest,
+  MovieResponse,
+  Page,
+  TmdbMovieDetail,
+  TmdbSearchResult,
+} from "./types";
 
 // 8081, not 8080 — see lib/api/client.ts's API_BASE_URL comment and
 // docs/DEVELOPMENT.md's port-conflict note.
@@ -82,4 +90,43 @@ export function uploadMoviePoster(token: string, id: string, file: File): Promis
 
 export function uploadMovieBackdrop(token: string, id: string, file: File): Promise<MovieResponse> {
   return uploadMovieImage(token, `/api/v1/movies/${id}/backdrop`, file);
+}
+
+/** Server-side TMDB proxy — the API key never reaches the browser. Search
+ * only, no pagination: TMDB's own relevance ranking on page 1 (up to 20
+ * results) is what the admin scans visually; a title not showing up means
+ * refining the query text, not paging through more results. */
+export function searchTmdbMovies(token: string, query: string): Promise<TmdbSearchResult[]> {
+  return apiFetch<TmdbSearchResult[]>(`/api/v1/admin/movies/tmdb-search?query=${encodeURIComponent(query)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+/** One extra TMDB call, fired only once a specific search result is picked
+ * — never prefetched for the whole results list, see CLAUDE.md's TMDB
+ * call-budget note. */
+export function getTmdbMovieDetail(token: string, tmdbId: number): Promise<TmdbMovieDetail> {
+  return apiFetch<TmdbMovieDetail>(`/api/v1/admin/movies/tmdb-search/${tmdbId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+/** PATCH, not PUT — a partial update, matching updateUserRole's PATCH
+ * elsewhere in this file's sibling admin-users.ts: only the fields present
+ * in the body are set, the other is left untouched. Sets posterUrl/
+ * backdropUrl directly to the given (hotlinked) URLs, bypassing
+ * uploadMoviePoster/uploadMovieBackdrop entirely — used right after
+ * createMovie succeeds in the TMDB-prefilled creation flow, never on the
+ * edit page (which stays on the multipart upload path for swapping images,
+ * see admin/movies/[id]/edit/page.tsx). */
+export function setMovieImageUrls(
+  token: string,
+  id: string,
+  urls: { posterUrl?: string; backdropUrl?: string },
+): Promise<MovieResponse> {
+  return apiFetch<MovieResponse>(`/api/v1/movies/${id}/image-urls`, {
+    method: "PATCH",
+    body: urls,
+    headers: { Authorization: `Bearer ${token}` },
+  });
 }
