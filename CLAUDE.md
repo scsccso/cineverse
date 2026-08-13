@@ -154,6 +154,14 @@
   默认标准,admin 页面同样遵守,具体应用见 Phase 8 前端补充里图表/筛选器/
   导出按钮各自的说明,这里不重复。
 
+**补充(2026-08-14,同 1.5.2 那条一样是补前提、不重写本节)**:开头"`/admin/**`
+下的页面(目前是 `/admin/dashboard`)"这个前提已经过时——现在是
+`/admin/dashboard`、`/admin/movies`(含 `/new`、`/[id]/edit`)、`/admin/users`。
+本节的结论(admin 不用 Liquid Glass、用 `Card` 的浅色平面视觉)对这些后加的
+页面同样适用,而且确实被援引过:`/admin/movies/new` 的 TMDB 搜索结果网格
+(见下面 2026-08-14 那条)就是按这条边界做的——海报网格用 `Card` 的视觉
+token,没有引入 `GlassCard` 或指针跟随高光。
+
 ### 1.5.2 Admin 拥有完全独立的导航 shell,不复用顾客端 Navbar(2026-08-06)
 
 Phase 8 交付时 `.admin-light` 只解决了**内容区**的主题反转(见 1.5.1),但顶部
@@ -2129,6 +2137,63 @@ key 的隔离后端实例上实测了"没配置 key 时的降级路径"(搜索�
 的成功路径**,这条路径目前只有集成测试(mock 网关)覆盖,没有拿真实
 TMDB API 在浏览器里跑过一遍。这个边界如实记录在这里,等有真实 key 可用
 再补一次真实验证。
+
+#### 补充:搜索结果从文字列表改成海报网格(同一分支的第二个 commit,2026-08-14)
+
+上面那次交付只解决了"能不能搜到",没管"搜到之后好不好选"——初版结果列表是
+一行一条的纯文字布局,海报缩成 48px 的缩略图塞在行首。**内容形态和展示形态
+不匹配**:从搜索结果里挑一部电影是一个视觉识别任务("哪个才是我要的那部
+《沙丘》"),真正被扫的是海报而不是标题字符串,把海报压到 48px、让文字占据
+主要面积,等于把这个任务里最有辨识力的信息降到最次要的位置。改成海报为主体
+的网格卡片(海报占满卡片宽度、`aspect-[2/3]`,标题/年份放下方)。
+
+- **列数跟随容器宽度降级,用的是 `@container` 查询而不是视口断点**:这个组件
+  渲染在一个固定 `max-w-2xl` 的卡片里,视口宽度并不能描述它实际拿到的空间——
+  视口 1280px 时容器内容区其实只有 ~600px。用容器查询(`grid-cols-2
+  @md:grid-cols-3 @xl:grid-cols-4`)才是对"容器变窄就降列"这个需求的直接
+  表达。实测确认:1280px 视口下 4 列,560px 视口下 3 列。
+- **卡片复用的是 `Card` 组件的视觉 token,不是嵌套一个真的 `<Card>`**:
+  `rounded-xl`/`bg-card`/`ring-1 ring-foreground/10`/`shadow-sm` 这套值直接
+  加在 `<button>` 上。原因是 `Card` 的内边距模型假设"内容带 padding",而这里
+  要的是海报满幅出血;而且整张卡片本身就是按钮,把按钮塞进 `Card` 这个 `div`
+  里反而多一层嵌套。这和座位图"只复用 `--glass-*` token、不复用 `GlassCard`
+  组件本体"是同一类取舍(见 1.5 节)。**没有引入 `GlassCard`/指针跟随高光**
+  ——`/admin/**` 是浅色平面的设计系统例外,这条边界是 1.5.1 定的,这次没破例。
+- **选中态必须有即时视觉确认**:点一张卡片之后要先发一次详情请求才会切到
+  预填表单,这中间有一段真实的等待。初版在这段时间里除了一个小 spinner 没有
+  任何反馈,点击读起来像没生效,然后页面突然换掉——用户无法确认自己到底点中
+  了哪一部。现在选中的卡片立刻变成主题色描边 + 海报上盖一个「✓ 已选择」徽章,
+  同时其余卡片降到 40% 不透明度,三重编码(描边颜色 + 图标 + 兄弟项对比),
+  不只靠颜色区分(1.5 节的既有标准)。
+- **骨架屏解决的是一个具体的坏行为,不只是"填满空白"**:初版在重新搜索时,
+  按钮转 spinner,但**上一次搜索的结果原样留在下面**——读起来像是"这就是你
+  这次搜索的结果",而实际上是上一个关键词的。现在搜索期间用 6 个卡片形状的
+  骨架屏替换掉旧结果,消除的是这个误读,不是单纯为了不空着。
+- **无障碍**:卡片本体远大于 44×44(实测 138×260);骨架屏的 `animate-pulse`
+  显式加了 `motion-reduce:animate-none`(实测 `prefers-reduced-motion` 下
+  `animationName` 为 `none`);hover 的阴影/透明度过渡加了
+  `motion-reduce:transition-none`;海报 `alt=""`(装饰性,标题就在旁边)。
+- **这次是纯展示层改动,数据行为一行没动**:fetch 调用、request-id 防竞态、
+  搜索触发时机、选中后拉详情的次数全部原样。用 Playwright 专门回归验证过
+  (不是只看截图):故意让先发的慢请求(3.5s)在后发的快请求(200ms)之后
+  才返回,断言慢的那个**没有**覆盖掉新结果;选中后表单的
+  title/durationMinutes/trailerUrl/description 都被正确预填;详情接口每次
+  选中**只调用一次**;`contentRating`/`userRating` 仍然是空的(TMDB 不自动
+  映射这两个字段,见上面)。改造前后各截了 5 张图对比。
+
+**顺手发现的一个既有缺口(这次没有修,只标注)**:`components/ui/skeleton.tsx`
+这个共享的 shadcn `Skeleton` 组件自身**没有** `motion-reduce:animate-none`,
+所以它在 `prefers-reduced-motion` 下依然会脉动。顾客端的
+`GlassSkeleton`(`components/glass/glass-skeleton.tsx`)是有的,两者不一致。
+受影响的调用点:`(customer)/profile/page.tsx`、`(customer)/bookings/page.tsx`、
+`admin/layout.tsx`、`components/admin/report-card-skeleton.tsx`、
+`components/layout/navbar.tsx`、`admin/dashboard/page.tsx`——目前只有这次新写的
+`tmdb-search-picker.tsx` 在调用点手动补了这个类。这和"审计后修复(2026-08-08)"
+那一节声称的"`prefers-reduced-motion` 已经补全"对不上:那次审计覆盖的是
+`components/motion/` 下的组件和 `seat-map.tsx`,没有覆盖到这个共享
+`Skeleton`。修法是一行(在 `Skeleton` 的默认 className 里加上),但那会同时
+改变上面 6 个调用点的渲染行为,超出"只重做 `TmdbSearchPicker` 展示层"这次的
+范围,所以按"发现即标注"的惯例记在这里,不在这个 commit 里顺手改掉。
 
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分

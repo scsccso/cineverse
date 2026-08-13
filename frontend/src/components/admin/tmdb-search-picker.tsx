@@ -2,13 +2,14 @@
 
 import { useRef, useState } from "react";
 import Image from "next/image";
-import { Film, Loader2, Search } from "lucide-react";
+import { Check, Film, Loader2, Search, SearchX } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { searchTmdbMovies, getTmdbMovieDetail } from "@/lib/api/admin-movies";
 import { ApiError } from "@/lib/api/client";
 import type { TmdbMovieDetail, TmdbSearchResult } from "@/lib/api/types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AnimatedFieldError } from "@/components/motion/animated-field-error";
 
 interface TmdbSearchPickerProps {
@@ -17,11 +18,23 @@ interface TmdbSearchPickerProps {
   onSelect: (detail: TmdbMovieDetail) => void;
 }
 
-/** Search box + results list for prefilling the create-movie form from
- * TMDB. Two TMDB calls total across a full pick: one for the search
- * (Enter/button-triggered, not live-as-you-type — see CLAUDE.md's TMDB
- * call-budget note), one for the chosen result's detail, fired exactly once
- * on selection. */
+const SKELETON_COUNT = 6;
+
+/** Poster-forward result grid, not a text list: picking a movie here is a
+ * visual recognition task ("which one is the right Dune?"), so the poster —
+ * not the title string — is the thing the admin actually scans. Column count
+ * drops with the *container* width (@container queries, not viewport
+ * breakpoints) because this renders inside a fixed max-w-2xl card, so
+ * viewport width alone wouldn't describe the space actually available.
+ *
+ * Card visuals reuse the admin Card component's own tokens (rounded-xl /
+ * bg-card / ring-1 ring-foreground/10 / shadow-sm) applied directly to the
+ * button rather than nesting an actual <Card>: Card's padding model assumes
+ * padded content, and these are full-bleed poster tiles. Same
+ * "reuse the visual language, not the component" precedent as the seat map
+ * (CLAUDE.md 1.5). Deliberately NOT GlassCard — /admin/** is the light,
+ * flat-surface exception with no pointer-tracking glow (CLAUDE.md 1.5.1).
+ */
 export function TmdbSearchPicker({ onSelect }: TmdbSearchPickerProps) {
   const { callAuthorized } = useAuth();
   const [query, setQuery] = useState("");
@@ -84,7 +97,7 @@ export function TmdbSearchPicker({ onSelect }: TmdbSearchPickerProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="@container space-y-4">
       <form onSubmit={handleSearch} className="flex gap-2">
         <Input
           value={query}
@@ -99,42 +112,93 @@ export function TmdbSearchPicker({ onSelect }: TmdbSearchPickerProps) {
       </form>
       <AnimatedFieldError message={searchError ?? undefined} />
 
-      {results && results.length === 0 && !searchError && (
-        <p className="py-4 text-center text-sm text-muted-foreground">未找到匹配结果,可以尝试其他关键词,或使用下方的手动创建</p>
-      )}
-
-      {results && results.length > 0 && (
-        <ul className="max-h-96 space-y-2 overflow-y-auto" aria-label="TMDB 搜索结果">
-          {results.map((result) => (
-            <li key={result.tmdbId}>
-              <button
-                type="button"
-                onClick={() => handleSelect(result)}
-                disabled={selectingId !== null}
-                aria-busy={selectingId === result.tmdbId}
-                className="flex w-full items-center gap-3 rounded-lg border border-border bg-background p-2 text-left transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
-              >
-                <div className="relative aspect-[2/3] w-12 shrink-0 overflow-hidden rounded bg-muted">
-                  {result.posterUrl ? (
-                    <Image src={result.posterUrl} alt="" fill sizes="48px" className="object-cover" />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                      <Film className="size-4 text-muted-foreground" aria-hidden />
-                    </div>
-                  )}
-                </div>
-                <span className="flex-1 text-sm text-foreground">
-                  {result.title}
-                  {result.releaseYear && <span className="text-muted-foreground"> ({result.releaseYear})</span>}
-                </span>
-                {selectingId === result.tmdbId && (
-                  <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden />
-                )}
-              </button>
-            </li>
+      {/* Skeletons replace any previous results while a new search is in
+          flight — showing the *old* result set under a spinning button read
+          as "these are your results" when they were the previous query's. */}
+      {searching ? (
+        <div className="grid grid-cols-2 gap-3 @md:grid-cols-3 @xl:grid-cols-4" aria-hidden>
+          {Array.from({ length: SKELETON_COUNT }).map((_, index) => (
+            <div key={index} className="overflow-hidden rounded-xl ring-1 ring-foreground/10">
+              <Skeleton className="aspect-[2/3] w-full rounded-none motion-reduce:animate-none" />
+              <div className="space-y-1.5 p-2">
+                <Skeleton className="h-4 w-4/5 motion-reduce:animate-none" />
+                <Skeleton className="h-3 w-10 motion-reduce:animate-none" />
+              </div>
+            </div>
           ))}
+        </div>
+      ) : results && results.length === 0 && !searchError ? (
+        <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
+          <SearchX className="size-8 text-muted-foreground" aria-hidden />
+          <p className="text-sm font-medium text-foreground">没有找到匹配的电影</p>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            检查一下片名拼写,或者换一个关键词(试试原版英文片名)。也可以直接用下方的「手动创建」自行录入。
+          </p>
+        </div>
+      ) : results && results.length > 0 ? (
+        /* Capped + scrollable rather than growing unbounded, so the
+           "手动创建" fallback underneath stays reachable without scrolling
+           past 20 results. 34rem fits two full rows at the default admin
+           width; a partially-visible row at narrower widths is the intended
+           "there's more below" affordance, not a clipping bug. */
+        <ul
+          className="grid max-h-[34rem] grid-cols-2 gap-3 overflow-y-auto p-0.5 @md:grid-cols-3 @xl:grid-cols-4"
+          aria-label="TMDB 搜索结果"
+        >
+          {results.map((result) => {
+            const isSelecting = selectingId === result.tmdbId;
+            const otherSelecting = selectingId !== null && !isSelecting;
+            return (
+              <li key={result.tmdbId}>
+                <button
+                  type="button"
+                  onClick={() => handleSelect(result)}
+                  disabled={selectingId !== null}
+                  aria-busy={isSelecting}
+                  className={`flex w-full flex-col overflow-hidden rounded-xl bg-card text-left shadow-sm transition-[box-shadow,opacity] outline-none ring-1 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none motion-reduce:transition-none ${
+                    isSelecting
+                      ? "ring-2 ring-primary"
+                      : "ring-foreground/10 hover:shadow-md hover:ring-foreground/30"
+                  } ${otherSelecting ? "opacity-40" : ""}`}
+                >
+                  <div className="relative aspect-[2/3] w-full bg-muted">
+                    {result.posterUrl ? (
+                      <Image
+                        src={result.posterUrl}
+                        alt=""
+                        fill
+                        sizes="(max-width: 640px) 45vw, 200px"
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-muted-foreground">
+                        <Film className="size-6" aria-hidden />
+                        <span className="text-xs">暂无海报</span>
+                      </div>
+                    )}
+                    {/* Immediate "you hit this one" confirmation — the detail
+                        fetch that follows takes long enough that a click with
+                        no feedback felt like a no-op before the page swapped
+                        to the prefilled form. */}
+                    {isSelecting && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-primary/25">
+                        <span className="flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground">
+                          <Check className="size-3.5" aria-hidden />
+                          已选择
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-0.5 p-2">
+                    <p className="line-clamp-2 text-sm leading-snug font-medium text-foreground">{result.title}</p>
+                    <p className="font-mono text-xs text-muted-foreground">{result.releaseYear ?? "年份未知"}</p>
+                  </div>
+                </button>
+              </li>
+            );
+          })}
         </ul>
-      )}
+      ) : null}
       <AnimatedFieldError message={selectError ?? undefined} />
     </div>
   );
