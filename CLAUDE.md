@@ -918,6 +918,15 @@ GET),但对跨站的 XHR/fetch、跨站 POST 仍然和 `Strict` 一样不带 coo
   三处几乎相同的 opacity+y 入场动画(此前都没做 reduced-motion 判断)合并成
   一个共享的 `components/motion/fade-in.tsx`(`<FadeIn>`),内置判断,三处
   改成直接调用它,不再各自维护一份。
+  **补充(2026-08-14):这条"补全"的覆盖范围不完整,当时的结论下早了**——
+  这次审计扫的是 `components/motion/` 下的组件和 `seat-map.tsx`,漏掉了
+  `components/ui/skeleton.tsx` 这个共享的 shadcn `Skeleton`:它的默认
+  className 里有 `animate-pulse` 但没有 `motion-reduce:animate-none`,所以
+  在 `prefers-reduced-motion` 下依然脉动(顾客端的 `GlassSkeleton` 是有的,
+  两者不一致)。**留作后续钩子,不在这里展开**:下次做前端无障碍相关工作时
+  一并处理——修法本身是一行,但会同时改变 `(customer)/profile`、
+  `(customer)/bookings`、`admin/layout`、`report-card-skeleton`、
+  `navbar`、`admin/dashboard` 这几个调用点的渲染行为,值得单独确认一次。
 - **新增 `app/(customer)/error.tsx` + `not-found.tsx`(暗色,复用
   `GlassCard`)、`app/admin/error.tsx` + `not-found.tsx`(浅色,复用
   `Card`)**:此前完全没有,`movies/[id]`/`showtimes/[id]` 页面已有的

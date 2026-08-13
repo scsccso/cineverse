@@ -179,12 +179,19 @@ export function TmdbSearchPicker({ onSelect }: TmdbSearchPickerProps) {
                     {/* Immediate "you hit this one" confirmation — the detail
                         fetch that follows takes long enough that a click with
                         no feedback felt like a no-op before the page swapped
-                        to the prefilled form. */}
+                        to the prefilled form. Two icons, two different
+                        meanings: the check is "this is the one you picked"
+                        (already true), the spinner is "the detail request is
+                        still running" (not done yet) — the check alone read as
+                        "finished" while the app was still working. Same
+                        animate-spin + motion-reduce pairing as the search
+                        button above, not a bespoke treatment. */}
                     {isSelecting && (
                       <div className="absolute inset-0 flex items-center justify-center bg-primary/25">
                         <span className="flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground">
                           <Check className="size-3.5" aria-hidden />
                           已选择
+                          <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden />
                         </span>
                       </div>
                     )}
