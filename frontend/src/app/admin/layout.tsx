@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { ApiError } from "@/lib/api/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { TmdbAttribution } from "@/components/layout/tmdb-attribution";
 
 /**
  * The definitive ADMIN-role gate — proxy.ts only rules out "no session at
@@ -72,6 +73,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-64 w-full rounded-xl" />
         </div>
+        <TmdbAttribution />
       </div>
     );
   }
@@ -80,6 +82,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="admin-light min-h-screen bg-background text-foreground">
       <AdminHeader user={user} />
       {children}
+      <TmdbAttribution />
     </div>
   );
 }

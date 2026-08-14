@@ -1074,15 +1074,21 @@ backdrop 大图,复用同一张"),但实际效果不好:首页 Hero 是横版
 - **TMDB 的使用条款,同样读了原文,不是凭印象**:免费层**明确禁止任何
   商业用途**("does not permit any commercial use of TMDB, the TMDB
   APIs, or TMDB Content"),且要求可见的署名——必须展示 TMDB 官方 logo,
-  加一句原文规定的文案("This product uses the TMDB API but is not
-  endorsed or certified by TMDB"),logo 的视觉权重还必须"低于应用自己的
-  品牌标识"。这比 OMDb 的条款更具体、约束力更强(OMDb 没有规定必须放
-  logo,TMDB 明确要求)。**这次没有在界面上加这个 TMDB 署名**——这次改动
-  范围只到"换数据源、验证效果",没有被要求做 UI 层的合规展示;如果这个
-  项目要严格满足 TMDB 的条款,还差一步:在页面上(比如 footer)加显示
-  TMDB logo + 那句指定文案,这个待办目前没有对应的代码。CineVerse 本身
-  非商用这一点仍然成立(跟 OMDb 那条记录一样),但"非商用"不能替代
-  "署名"这个独立的条款要求,两者不是一回事。
+  加一句原文规定的文案(**补充,2026-08-14**:当时这里凭印象转述的英文
+  只是一句不准确的复述,不是逐字引用——真正动手做署名合规交付时改用
+  curl 拉取条款页原始 HTML、手动去标签核对过,准确原文比这里当时记的
+  版本多了"and the TMDB APIs"、多了"or otherwise approved"两处;这条
+  记录原样保留,是当时"凭印象记了什么"的真实历史,不做事后静默改写,
+  经核对过的准确原文和完整合规实现见下面"TMDB 署名合规"一节),logo
+  的视觉权重还必须"低于应用自己的品牌标识"。这比 OMDb 的条款更具体、
+  约束力更强(OMDb 没有规定必须放 logo,TMDB 明确要求)。**这次没有在
+  界面上加这个 TMDB 署名**——这次改动范围只到"换数据源、验证效果",
+  没有被要求做 UI 层的合规展示;如果这个项目要严格满足 TMDB 的条款,
+  还差一步:在页面上(比如 footer)加显示 TMDB logo + 那句指定文案,
+  这个待办目前没有对应的代码——**已于 2026-08-14 补上,见下面"TMDB
+  署名合规"一节**。CineVerse 本身非商用这一点仍然成立(跟 OMDb 那条
+  记录一样),但"非商用"不能替代"署名"这个独立的条款要求,两者不是
+  一回事。
 
 ### Hero 背景图:裁切位置修正 + 一次排除法排查(2026-08-08)
 换上 TMDB 真实剧照之后(见上一条),又发现两个独立的观感问题——这两个
@@ -2203,6 +2209,91 @@ TMDB API 在浏览器里跑过一遍。这个边界如实记录在这里,等有�
 `Skeleton`。修法是一行(在 `Skeleton` 的默认 className 里加上),但那会同时
 改变上面 6 个调用点的渲染行为,超出"只重做 `TmdbSearchPicker` 展示层"这次的
 范围,所以按"发现即标注"的惯例记在这里,不在这个 commit 里顺手改掉。
+
+### TMDB 署名合规:footer 组件(2026-08-14)
+
+补上"backdrop 和 poster 分别用两个不同数据源"那条记录里留下的合规缺口——
+那次是第一次让运行时(不只是种子数据阶段的一次性脚本)真正用到 TMDB 的
+图片数据,当时评估过署名要求但判定不在那次改动范围内;"创建电影的主路径
+改成「从 TMDB 搜索选择」"那次让后端第一次真正在运行时主动调用 TMDB,
+再次评估过、仍然判定不在那次范围内。这次单独作为一个任务补上,和
+skeleton.tsx 的无障碍修复分成两个独立 commit 交付,互不依赖。
+
+- **先验证网络访问权限,不是假设有或假设没有**:动手前先用 curl 直接探测
+  `themoviedb.org`,确认这个环境有出网权限,才决定走"下载官方 logo 素材"
+  这条路,不是拿不到素材、退而求其次的纯文字方案——图片和文字两部分这次
+  都是完整合规实现,不是折衷版本。
+- **官方文案不信 WebFetch 的 AI 摘要,改成 curl 原始 HTML 自己去标签核对**:
+  第一次用 WebFetch 查文案要求时,拿到一个和 CLAUDE.md 已有记录直接矛盾的
+  结论(声称"没有强制要求具体文案"),这是 WebFetch 内置摘要步骤对这种
+  要求逐字准确的合规文本不可靠的一次真实体现——即使明确要求"给出原文
+  逐字引用",摘要工具复述的文本也不能直接当成可信原文。改用 curl 拉取
+  条款页原始 HTML,写一段 Node 脚本自己去标签提取周边文本,拿到的才是
+  真正可信的版本。这个过程也顺带发现 CLAUDE.md 里那条旧记录本身就是
+  凭印象转述、不是逐字引用的产物(已在原记录处加了一条 2026-08-14 的
+  更正标注,不做静默改写),下面是核对过的准确原文:
+  > This [website, program, service, application, product] uses TMDB and
+  > the TMDB APIs but is not endorsed, certified, or otherwise approved
+  > by TMDB.
+
+  方括号里是官方要求二选一替换成描述自身产品形态的名词,`TmdbAttribution`
+  组件选的是"website"。
+- **logo 素材是 TMDB 官方原始 SVG,不是重新画的近似图形**:同样用 curl
+  从 `themoviedb.org` 的品牌指南页直接下载,三个官方尺寸变体(短版/长版/
+  方形)里选了"短版"(`blue_short.svg`,约 7.7:1 宽高比)——长版
+  (约 13.8:1)在一行 footer 里过宽,方形版(约 1.39:1)对"文字旁边的
+  一枚小 logo"这个位置来说太高,短版是唯一同时适合"一行内、和文字并排"
+  的官方尺寸。文件字节不做任何修改直接进仓库
+  (`frontend/public/tmdb-attribution.svg`),不重新导出/压缩/改色,和
+  官方源文件逐字节一致,避免被认定为"篡改后的 logo"。
+- **没有复用/新建通用 footer 组件,先确认过项目里确实没有已有的**——全仓库
+  搜索过 footer/Footer 相关命名,结果只有各页面内部局部的收尾说明区块,
+  没有一个是"全站落款"用途的共享组件。新建了
+  `components/layout/tmdb-attribution.tsx`(`<TmdbAttribution>`),组件
+  本体就是一个语义化的 `<footer>`,调用方不需要再包一层容器。
+- **挂载点是现有布局的兄弟元素,没有改造布局结构**:顾客端
+  `app/(customer)/layout.tsx` 本来就是 `flex min-h-full flex-col`
+  (`Navbar` + `flex-1` 的 `<main>`),`<main>` 之后直接加一行
+  `<TmdbAttribution />` 就自然获得"内容不够高时贴底、内容够高时跟着
+  滚动"的效果,不需要额外样式。admin 端 `app/admin/layout.tsx` 没有这套
+  flex-col 骨架(未授权骨架屏分支、授权后正常分支,两个 return 分支外层
+  都只是普通的 `min-h-screen` `div`)——按明确指示不为了塞一行署名信息
+  去重构现有布局,没有把它也改成 flex-col 追求同款贴底效果,两个分支各自
+  在内容之后原样加一行,footer 停在内容流的自然末尾。顾客端有粘性贴底、
+  admin 端没有,这个不对称是刻意接受的,不是遗漏。两个分支都加(不是只加
+  授权后那个)是因为署名内容不依赖登录态,没有理由让未授权访问
+  `/admin/**` 时少一份合规展示。
+- **视觉权重用实测数字说话,不是只在注释里断言"更小"**:`Navbar`/
+  `AdminHeader` 自己的品牌标识是 `size-5`(20px)的 `Clapperboard` 图标
+  + `text-lg font-semibold`(18px、半粗体)文字组合;`TmdbAttribution`
+  的 logo 是 `h-3.5`(14px)+ `opacity-70`,文案是 `text-xs`(12px)+
+  `text-muted-foreground/80`(80% 透明度,非纯色)。两组数字(20px 实心
+  图标 vs 14px 70% 不透明度的图标;18px 半粗体 vs 12px 常规字重 + 额外
+  透明度衰减)确保"署名视觉权重低于站点品牌"不只是主观感觉,Playwright
+  验证时也读取了这两组 computed style 数字逐一核对。
+- **文案保持英文原文,没有翻译**:这是合规文本,翻译成中文可能不再满足
+  条款里"place the following notice"这个要求逐字复述的语义,所以组件里
+  唯一一段面向用户的文字保留英文——和站内其余全中文 UI 文案不一致是刻意
+  的例外,不是遗漏本地化。
+- **用 `<img>` 而不是 `next/image`**:这是一枚固定尺寸的本地静态 SVG,
+  不需要 `next/image` 的响应式候选图/懒加载管线(矢量图也没有"多分辨率
+  候选"这个概念,优化对它没有实际收益),直接用原生 `<img>` + 一行
+  `eslint-disable-next-line @next/next/no-img-element` 跳过默认要求用
+  `next/image` 的 lint 规则——跑过 `npm run lint` 确认这一行确实按预期
+  消除了警告,不是猜测这条注释"应该"有效。
+- **验证方式**:延续本项目一贯的"起一对隔离的前后端实例做验证,不碰主
+  开发服务器"惯例——后端 `SERVER_PORT=8084`、
+  `CORS_ALLOWED_ORIGINS=http://localhost:3006`,前端
+  `NEXT_PUBLIC_API_BASE_URL=http://localhost:8084` 重新 build 后
+  `next start -p 3006`。用 Playwright 分别访问顾客端首页(匿名)、admin
+  未授权骨架屏分支(直接访问 `/admin/dashboard`,故意把
+  `/api/v1/auth/refresh`/`/api/v1/users/me` 两个请求延迟 3 秒拉长这个
+  分支的可观察窗口)、admin 授权后分支(用种子 ADMIN 账号
+  `admin@cineverse.local` 走真实登录表单),三处全部读到 footer
+  `isVisible()===true`、文案逐字符匹配、logo `naturalWidth: 300`
+  (图片真的解码成功,不是碎图标)、以及上面那组视觉权重的实测数字。
+  验证完杀掉两个隔离实例、删除临时的 `.env.local`/验证脚本,`git status`
+  确认没有残留。
 
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
