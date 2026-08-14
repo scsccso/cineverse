@@ -927,6 +927,13 @@ GET),但对跨站的 XHR/fetch、跨站 POST 仍然和 `Strict` 一样不带 coo
   一并处理——修法本身是一行,但会同时改变 `(customer)/profile`、
   `(customer)/bookings`、`admin/layout`、`report-card-skeleton`、
   `navbar`、`admin/dashboard` 这几个调用点的渲染行为,值得单独确认一次。
+  **已解决(2026-08-14,同一天里更晚的一次独立 commit)**:修法就是这里
+  说的那一行,但这里当时列的六个调用点有两处不准确——重新 grep 之后发现
+  `(customer)/bookings` 用的其实是 `GlassSkeleton` 不是这个共享组件,
+  从来没受过这个问题影响;`admin/dashboard` 不是直接调用点,是通过
+  `report-card-skeleton` 间接受益。这条旧记录原样保留、不做静默修正,
+  准确的清单和完整修复/验证过程见下面"skeleton.tsx 补 motion-reduce"
+  一节。
 - **新增 `app/(customer)/error.tsx` + `not-found.tsx`(暗色,复用
   `GlassCard`)、`app/admin/error.tsx` + `not-found.tsx`(浅色,复用
   `Card`)**:此前完全没有,`movies/[id]`/`showtimes/[id]` 页面已有的
@@ -2210,6 +2217,10 @@ TMDB API 在浏览器里跑过一遍。这个边界如实记录在这里,等有�
 改变上面 6 个调用点的渲染行为,超出"只重做 `TmdbSearchPicker` 展示层"这次的
 范围,所以按"发现即标注"的惯例记在这里,不在这个 commit 里顺手改掉。
 
+**已解决(2026-08-14,同一天里更晚的一次独立 commit)**:见下面
+"skeleton.tsx 补 motion-reduce"一节——重新 grep 之后这里的六项清单也被
+发现有两处不准确,同样原样保留不做静默修正,准确版本见那一节。
+
 ### TMDB 署名合规:footer 组件(2026-08-14)
 
 补上"backdrop 和 poster 分别用两个不同数据源"那条记录里留下的合规缺口——
@@ -2294,6 +2305,58 @@ skeleton.tsx 的无障碍修复分成两个独立 commit 交付,互不依赖。
   (图片真的解码成功,不是碎图标)、以及上面那组视觉权重的实测数字。
   验证完杀掉两个隔离实例、删除临时的 `.env.local`/验证脚本,`git status`
   确认没有残留。
+
+### skeleton.tsx 补 motion-reduce(2026-08-14)
+
+上面两处"发现即标注"的钩子(2026-08-08 审计小节的补充、以及 TMDB 搜索
+选择器交付记录里的备注)这次一起收掉,和 TMDB 署名合规分成两个独立
+commit,彼此不依赖,方便各自单独追溯。
+
+- **修法确实只有一行**:`components/ui/skeleton.tsx` 的默认 className 从
+  `"animate-pulse rounded-md bg-muted"` 加上 `motion-reduce:animate-none`,
+  和 `GlassSkeleton`/`components/motion/` 下已有组件的降级写法完全一致,
+  没有发明新的处理方式。
+- **先用 grep 重新核对"六个调用点"这份清单,没有直接沿用**——
+  `grep -rln 'from "@/components/ui/skeleton"'` 只找到 5 个直接
+  importer,不是 6 个。逐一核对差异:
+  - `(customer)/bookings/page.tsx` 实际引入的是 `GlassSkeleton`
+    (`components/glass/glass-skeleton.tsx`,本来就带
+    `motion-reduce:animate-none`),不是这个共享 `Skeleton`——这个页面
+    从来没有被这个问题影响过,旧清单把它算进去是错的。
+  - `admin/dashboard/page.tsx` 本身不直接 import `Skeleton`,用的是
+    `<ReportCardSkeleton />`,这个包装组件内部才引入共享 `Skeleton`——
+    是一个真实但*间接*的受益点,旧清单没有区分"直接调用"和"通过包装
+    组件间接受益",笼统混成了六个同等地位的调用点。
+  - 准确清单:**4 个直接受益、此前确实受影响**
+    (`(customer)/profile/page.tsx`、`admin/layout.tsx`、
+    `components/admin/report-card-skeleton.tsx`、
+    `components/layout/navbar.tsx`)+ **1 个间接受益**
+    (`admin/dashboard/page.tsx`,通过 `ReportCardSkeleton` 传递受益,
+    不是独立的第二个受影响点)+ **1 个从未受影响,旧清单误列**
+    (`(customer)/bookings/page.tsx`)。另有
+    `components/admin/tmdb-search-picker.tsx` 这个第 5 个直接
+    importer——它在上一次交付时已经对自己的三处 `Skeleton` 用法手动加过
+    同款 `motion-reduce:animate-none`(见该次交付记录),这次共享组件的
+    修复对它而言是重复(不是新增受益),这次没有顺手去删那三处手动加的
+    冗余类名——用户这次任务范围明确只到"改
+    `components/ui/skeleton.tsx` 这一个文件",清理另一个文件里的冗余
+    类名不属于这次改动,不影响正确性(同一条规则被断言了两次,不冲突),
+    留给以后有机会再顺手清。
+  - 上面两处旧记录原样保留,没有静默改写那份六项清单本身,只在原处加了
+    指向这里的"已解决"标注。
+- **验证:读实际 computed `animationName`,不是只看 class 有没有挂上**
+  ——延续这次 TMDB 署名合规交付定下的同一套隔离环境(后端 8084、前端
+  3006)。用 Playwright 在两种 `reducedMotion` 上下文下分别打开
+  `/admin/dashboard`(同样延迟 `/api/v1/auth/refresh`/`/api/v1/users/me`
+  3 秒,拉长 `admin/layout.tsx` 未授权骨架屏分支——这个分支直接用到共享
+  `Skeleton`——的可观察窗口):`reducedMotion: 'reduce'` 下读到
+  `animationName: "none"`;`reducedMotion: 'no-preference'` 下读到
+  `animationName: "pulse"`,确认修复只是给 reduced-motion 加了降级
+  分支,没有连正常场景下的动效一起关掉。**两种上下文下骨架屏元素本身的
+  存在和尺寸完全没变**(`boundingBox` 两次读到的都是同一个 64×32 矩形、
+  `display: block`、`visibility: visible`)——修复去掉的只是动效,不是
+  隐藏了整个 loading 状态,这一点也是实测确认的,不是从"应该不会有副
+  作用"推断出来的。
 
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
