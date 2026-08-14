@@ -179,6 +179,19 @@ Full architectural decisions and rationale for each Phase live in
 
 ## Known Trade-offs & Limitations
 
+- **Tech stack settled on Java 21 LTS + Spring Boot 3.5.15, not the project's
+  original Java 25 + Spring Boot 4.1.** This was a hiring-market alignment
+  call, not a technical shortcoming — in the current hiring market, "Java
+  LTS" and "Spring Boot 3" still default to these versions, not a
+  recently-released major line whose ecosystem and tutorials are still
+  catching up. The cost: Spring Boot 3.5 hit OSS EOL on 2026-06-30 (the last
+  minor release in the 3.x line — there's no "newer but still-maintained"
+  3.x to move to instead). Chosen deliberately, not overlooked: a portfolio
+  project doesn't need an ongoing security-patch supply, and what an
+  interviewer is actually gauging is familiarity with the Spring Boot 3.x
+  ecosystem, not whether this specific deployment can receive a patch today.
+  Full research and trade-off record in
+  [`docs/DECISIONS.md`](./docs/DECISIONS.md).
 - **Cinema/hall management has no admin UI.** The backend supports creating
   cinemas and halls (with automatic seat generation), but there's
   intentionally no update/delete API — Phase 3 froze this as a fixed MVP
