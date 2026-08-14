@@ -38,12 +38,15 @@ public class ShowtimeController {
     }
 
     @GetMapping
-    @Operation(summary = "按电影/日期查询场次", description = "公开接口,无需登录;movieId 和 date 都可选,"
-            + "date 按 UTC 自然日筛选(如 2026-08-10)")
+    @Operation(summary = "按电影/影厅/日期查询场次", description = "公开接口,无需登录;movieId、hallId、date 都可选,"
+            + "date 按 UTC 自然日筛选(如 2026-08-10)。响应同时带 bookedSeats/totalSeats"
+            + "(仅统计 CONFIRMED 订单,和管理后台上座率报表同一口径),不分页——见"
+            + "CLAUDE.md「Admin 场次管理」一节为什么这个公开端点没有改成 Page<T>")
     public List<ShowtimeResponse> list(
             @RequestParam(required = false) UUID movieId,
+            @RequestParam(required = false) UUID hallId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        return showtimeService.list(movieId, date);
+        return showtimeService.list(movieId, hallId, date);
     }
 
     @GetMapping("/{id}")

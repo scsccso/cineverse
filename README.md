@@ -179,7 +179,7 @@ CineVerse/
     └── src/
         ├── app/
         │   ├── (customer)/    # 顾客端路由组:/, /login, /register, /profile, /showtimes/[id](/seats), /bookings(/[id]/confirmed)
-        │   └── admin/         # 管理后台(独立导航外壳 + 角色校验):/admin/dashboard, /admin/movies(/new, /[id]/edit), /admin/users
+        │   └── admin/         # 管理后台(独立导航外壳 + 角色校验):/admin/dashboard, /admin/movies(/new, /[id]/edit), /admin/showtimes(/new), /admin/users
         ├── components/        # ui(shadcn) / auth / layout / motion / booking / admin
         ├── lib/                # api 客户端、auth context、zod schema
         └── proxy.ts           # 路由保护(Next 16:middleware 改名 proxy)

@@ -28,4 +28,19 @@ public interface BookingSeatRepository extends JpaRepository<BookingSeat, UUID> 
      */
     @Query("select bs from BookingSeat bs join fetch bs.seat where bs.booking.id in :bookingIds")
     List<BookingSeat> findByBookingIdInWithSeat(@Param("bookingIds") Collection<UUID> bookingIds);
+
+    /**
+     * One row per showtime with >=1 CONFIRMED-booked seat; a showtime with
+     * zero is simply absent (caller defaults to 0, same COALESCE-via-Java
+     * shape as {@code ReportRepository.occupancyRows}'s LEFT JOIN — this is
+     * the same "count only CONFIRMED" rule Phase 8's occupancy report
+     * established, reused here rather than redefined).
+     */
+    @Query("""
+            select new com.cineverse.backend.booking.repository.ShowtimeBookedSeatCount(bs.booking.showtime.id, count(bs.id))
+            from BookingSeat bs
+            where bs.booking.showtime.id in :showtimeIds and bs.booking.status = com.cineverse.backend.booking.entity.BookingStatus.CONFIRMED
+            group by bs.booking.showtime.id
+            """)
+    List<ShowtimeBookedSeatCount> countConfirmedByShowtimeIdIn(@Param("showtimeIds") Collection<UUID> showtimeIds);
 }

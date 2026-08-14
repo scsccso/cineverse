@@ -16,6 +16,10 @@ public final class ShowtimeSpecifications {
         return (root, query, cb) -> movieId == null ? null : cb.equal(root.get("movie").get("id"), movieId);
     }
 
+    public static Specification<Showtime> hasHall(UUID hallId) {
+        return (root, query, cb) -> hallId == null ? null : cb.equal(root.get("hall").get("id"), hallId);
+    }
+
     /** Filters by start_time falling within the given calendar day, interpreted in UTC. */
     public static Specification<Showtime> startsOnDate(LocalDate date) {
         return (root, query, cb) -> {

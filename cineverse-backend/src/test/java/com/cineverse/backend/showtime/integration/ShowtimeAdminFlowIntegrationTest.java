@@ -8,11 +8,22 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.cineverse.backend.auth.dto.LoginRequest;
 import com.cineverse.backend.auth.dto.RegisterRequest;
+import com.cineverse.backend.booking.entity.Booking;
+import com.cineverse.backend.booking.entity.BookingSeat;
+import com.cineverse.backend.booking.repository.BookingRepository;
+import com.cineverse.backend.booking.repository.BookingSeatRepository;
+import com.cineverse.backend.cinema.entity.Seat;
+import com.cineverse.backend.cinema.repository.SeatRepository;
 import com.cineverse.backend.movie.dto.MovieRequest;
 import com.cineverse.backend.movie.entity.MovieStatus;
 import com.cineverse.backend.showtime.dto.CreateShowtimeRequest;
+import com.cineverse.backend.showtime.entity.Showtime;
+import com.cineverse.backend.showtime.repository.ShowtimeRepository;
+import com.cineverse.backend.user.entity.User;
+import com.cineverse.backend.user.repository.UserRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -43,6 +54,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 class ShowtimeAdminFlowIntegrationTest {
 
     private static final String SEEDED_HALL_ID = "21111111-1111-1111-1111-111111111111"; // Hall 1, from V6 seed
+    private static final String SEEDED_HALL_2_ID = "22222222-1111-1111-1111-111111111111"; // Hall 2, from V6 seed
 
     @Container
     @ServiceConnection
@@ -58,6 +70,21 @@ class ShowtimeAdminFlowIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private ShowtimeRepository showtimeRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private SeatRepository seatRepository;
+
+    @Autowired
+    private BookingRepository bookingRepository;
+
+    @Autowired
+    private BookingSeatRepository bookingSeatRepository;
 
     @Test
     void adminCanCreateShowtimeAndPublicCanFetchIt() throws Exception {
@@ -139,6 +166,96 @@ class ShowtimeAdminFlowIntegrationTest {
     }
 
     @Test
+    void showtimesCanBeFilteredByHall() throws Exception {
+        String accessToken = loginAsAdmin();
+        UUID movieId = createMovie(accessToken, "Hall Filter Movie " + UUID.randomUUID(), 100);
+
+        UUID hall1ShowtimeId = createShowtimeReturningId(accessToken, movieId, SEEDED_HALL_ID, "2026-09-06T10:00:00Z");
+        UUID hall2ShowtimeId =
+                createShowtimeReturningId(accessToken, movieId, SEEDED_HALL_2_ID, "2026-09-06T10:00:00Z");
+
+        mockMvc.perform(get("/api/v1/showtimes")
+                        .param("movieId", movieId.toString())
+                        .param("hallId", SEEDED_HALL_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(hall1ShowtimeId.toString()));
+
+        mockMvc.perform(get("/api/v1/showtimes")
+                        .param("movieId", movieId.toString())
+                        .param("hallId", SEEDED_HALL_2_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(hall2ShowtimeId.toString()));
+    }
+
+    /**
+     * bookedSeats must count the CONFIRMED booking's seat and ignore the
+     * PENDING one entirely — same "only CONFIRMED counts" rule the Phase 8
+     * occupancy report already established (see ReportRepository
+     * .occupancyRows), asserted here at the showtime-list/detail level
+     * instead of re-asserted at the report level a second time. totalSeats
+     * is asserted against a live count from SeatRepository rather than a
+     * hardcoded number, so this doesn't silently rot if the seed layout
+     * (V6) ever changes.
+     */
+    @Test
+    void bookedSeatsCountsOnlyConfirmedBookingsNotPending() throws Exception {
+        String accessToken = loginAsAdmin();
+        UUID movieId = createMovie(accessToken, "Seat Count Movie " + UUID.randomUUID(), 100);
+        UUID showtimeId =
+                createShowtimeReturningId(accessToken, movieId, SEEDED_HALL_ID, "2026-09-07T10:00:00Z");
+
+        Showtime showtime = showtimeRepository.findById(showtimeId).orElseThrow();
+        User admin = userRepository.findByEmail("admin@cineverse.local").orElseThrow();
+        List<Seat> hallSeats = seatRepository.findByHallIdOrderByRowLabelAscColumnNumberAsc(
+                UUID.fromString(SEEDED_HALL_ID));
+
+        Booking confirmed = new Booking(admin, showtime, new BigDecimal("25.00"), Instant.now().plusSeconds(300));
+        confirmed.markConfirmed();
+        // saveAndFlush: Booking has @CreationTimestamp/@UpdateTimestamp — see
+        // TimestampedEntitySaveFlushRuleTest, this is the same rule that
+        // caught AdminUserService.updateUserRole using bare save() before.
+        bookingRepository.saveAndFlush(confirmed);
+        bookingSeatRepository.saveAndFlush(new BookingSeat(confirmed, hallSeats.get(0), new BigDecimal("25.00")));
+
+        Booking pending = new Booking(admin, showtime, new BigDecimal("25.00"), Instant.now().plusSeconds(300));
+        bookingRepository.saveAndFlush(pending);
+        bookingSeatRepository.saveAndFlush(new BookingSeat(pending, hallSeats.get(1), new BigDecimal("25.00")));
+
+        mockMvc.perform(get("/api/v1/showtimes/{id}", showtimeId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bookedSeats").value(1))
+                .andExpect(jsonPath("$.totalSeats").value(hallSeats.size()));
+
+        mockMvc.perform(get("/api/v1/showtimes").param("movieId", movieId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].bookedSeats").value(1))
+                .andExpect(jsonPath("$[0].totalSeats").value(hallSeats.size()));
+    }
+
+    /** Not previously covered — the only existing delete test deletes a showtime with zero bookings. */
+    @Test
+    void deletingAShowtimeWithBookingsIsRejectedWith409() throws Exception {
+        String accessToken = loginAsAdmin();
+        UUID movieId = createMovie(accessToken, "Delete Guard Movie " + UUID.randomUUID(), 100);
+        UUID showtimeId =
+                createShowtimeReturningId(accessToken, movieId, SEEDED_HALL_ID, "2026-09-08T10:00:00Z");
+
+        Showtime showtime = showtimeRepository.findById(showtimeId).orElseThrow();
+        User admin = userRepository.findByEmail("admin@cineverse.local").orElseThrow();
+        Booking booking = new Booking(admin, showtime, new BigDecimal("25.00"), Instant.now().plusSeconds(300));
+        bookingRepository.saveAndFlush(booking); // stays PENDING — existsByShowtimeId doesn't filter by status
+
+        mockMvc.perform(delete("/api/v1/showtimes/{id}", showtimeId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("bookings")));
+
+        mockMvc.perform(get("/api/v1/showtimes/{id}", showtimeId)).andExpect(status().isOk());
+    }
+
+    @Test
     void anonymousRequestsToMutateShowtimesAreRejectedWith401() throws Exception {
         String accessToken = loginAsAdmin();
         UUID movieId = createMovie(accessToken, "Anon Guard " + UUID.randomUUID(), 100);
@@ -174,6 +291,19 @@ class ShowtimeAdminFlowIntegrationTest {
                                 movieId, UUID.fromString(SEEDED_HALL_ID), Instant.parse(startTimeIso),
                                 new BigDecimal("25.00")))))
                 .andExpect(status().isCreated());
+    }
+
+    private UUID createShowtimeReturningId(String accessToken, UUID movieId, String hallId, String startTimeIso)
+            throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v1/showtimes")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateShowtimeRequest(
+                                movieId, UUID.fromString(hallId), Instant.parse(startTimeIso),
+                                new BigDecimal("25.00")))))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return readId(result);
     }
 
     private UUID createMovie(String accessToken, String title, int durationMinutes) throws Exception {

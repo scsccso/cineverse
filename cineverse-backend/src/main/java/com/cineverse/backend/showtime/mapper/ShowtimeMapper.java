@@ -5,8 +5,8 @@ import com.cineverse.backend.movie.entity.Movie;
 import com.cineverse.backend.showtime.dto.ShowtimeResponse;
 import com.cineverse.backend.showtime.entity.Showtime;
 import com.cineverse.backend.storage.StorageProperties;
-import java.util.List;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
@@ -20,9 +20,18 @@ public abstract class ShowtimeMapper {
     @Autowired
     protected StorageProperties storageProperties;
 
-    public abstract ShowtimeResponse toResponse(Showtime showtime);
-
-    public abstract List<ShowtimeResponse> toResponseList(List<Showtime> showtimes);
+    /**
+     * bookedSeats/totalSeats aren't properties on {@link Showtime} itself —
+     * they're pre-computed by the caller (ShowtimeService, batched across a
+     * whole result list rather than queried per showtime) and threaded
+     * through as explicit parameters. {@code @Mapping(source=...)} names them
+     * directly rather than relying on MapStruct's implicit same-name
+     * parameter matching, so there's no ambiguity to debug if that inference
+     * ever doesn't kick in the way expected.
+     */
+    @Mapping(target = "bookedSeats", source = "bookedSeats")
+    @Mapping(target = "totalSeats", source = "totalSeats")
+    public abstract ShowtimeResponse toResponse(Showtime showtime, int bookedSeats, int totalSeats);
 
     protected ShowtimeResponse.MovieSummary toMovieSummary(Movie movie) {
         String posterUrl = (movie.getPosterUrl() != null && !movie.getPosterUrl().isBlank())

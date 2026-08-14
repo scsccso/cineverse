@@ -17,7 +17,11 @@ public record ShowtimeResponse(
         @Schema(description = "startTime + movie.durationMinutes — the 20-minute cleanup buffer is not included") Instant endTime,
         @Schema(example = "25.00") BigDecimal price,
         Instant createdAt,
-        Instant updatedAt) {
+        Instant updatedAt,
+        @Schema(description = "CONFIRMED bookings only — same counting rule as the Phase 8 occupancy report")
+                int bookedSeats,
+        @Schema(description = "Bookable seat units in this showtime's hall (one row per COUPLE seat, not two)")
+                int totalSeats) {
 
     public record MovieSummary(
             UUID id,
