@@ -1,8 +1,12 @@
 package com.cineverse.backend.showtime.service;
 
 import com.cineverse.backend.booking.repository.BookingRepository;
+import com.cineverse.backend.booking.repository.BookingSeatRepository;
+import com.cineverse.backend.booking.repository.ShowtimeBookedSeatCount;
 import com.cineverse.backend.cinema.entity.Hall;
 import com.cineverse.backend.cinema.repository.HallRepository;
+import com.cineverse.backend.cinema.repository.HallSeatCount;
+import com.cineverse.backend.cinema.repository.SeatRepository;
 import com.cineverse.backend.movie.entity.Movie;
 import com.cineverse.backend.movie.repository.MovieRepository;
 import com.cineverse.backend.showtime.dto.CreateShowtimeRequest;
@@ -17,8 +21,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -35,6 +41,8 @@ public class ShowtimeService {
     private final MovieRepository movieRepository;
     private final HallRepository hallRepository;
     private final BookingRepository bookingRepository;
+    private final BookingSeatRepository bookingSeatRepository;
+    private final SeatRepository seatRepository;
     private final ShowtimeMapper showtimeMapper;
 
     public ShowtimeService(
@@ -42,24 +50,29 @@ public class ShowtimeService {
             MovieRepository movieRepository,
             HallRepository hallRepository,
             BookingRepository bookingRepository,
+            BookingSeatRepository bookingSeatRepository,
+            SeatRepository seatRepository,
             ShowtimeMapper showtimeMapper) {
         this.showtimeRepository = showtimeRepository;
         this.movieRepository = movieRepository;
         this.hallRepository = hallRepository;
         this.bookingRepository = bookingRepository;
+        this.bookingSeatRepository = bookingSeatRepository;
+        this.seatRepository = seatRepository;
         this.showtimeMapper = showtimeMapper;
     }
 
     @Transactional(readOnly = true)
-    public List<ShowtimeResponse> list(UUID movieId, LocalDate date) {
+    public List<ShowtimeResponse> list(UUID movieId, UUID hallId, LocalDate date) {
         Specification<Showtime> spec = Specification.where(ShowtimeSpecifications.hasMovie(movieId))
+                .and(ShowtimeSpecifications.hasHall(hallId))
                 .and(ShowtimeSpecifications.startsOnDate(date));
-        return showtimeMapper.toResponseList(showtimeRepository.findAll(spec));
+        return toResponsesWithSeatCounts(showtimeRepository.findAll(spec));
     }
 
     @Transactional(readOnly = true)
     public ShowtimeResponse getById(UUID id) {
-        return showtimeMapper.toResponse(findShowtimeOrThrow(id));
+        return toResponsesWithSeatCounts(List.of(findShowtimeOrThrow(id))).get(0);
     }
 
     @Transactional
@@ -78,7 +91,47 @@ public class ShowtimeService {
         // saveAndFlush: Showtime has @CreationTimestamp/@UpdateTimestamp,
         // and the response must reflect them, not null — see
         // TimestampedEntitySaveFlushRule.
-        return showtimeMapper.toResponse(showtimeRepository.saveAndFlush(showtime));
+        Showtime saved = showtimeRepository.saveAndFlush(showtime);
+        // Goes through the same batched path as list()/getById() (bookedSeats
+        // will always resolve to 0 here — nothing can book a showtime inside
+        // the same transaction that just created it) rather than a separate
+        // "new showtimes have zero bookings" shortcut, so there's exactly one
+        // code path that assembles a ShowtimeResponse's seat counts, not two
+        // that could drift.
+        return toResponsesWithSeatCounts(List.of(saved)).get(0);
+    }
+
+    /**
+     * bookedSeats/totalSeats aren't columns on {@code showtimes} — they're
+     * computed here in two batched queries (one across all the given
+     * showtimes' ids, one across their distinct hall ids) rather than per
+     * showtime, and the same "count only CONFIRMED" rule Phase 8's occupancy
+     * report already established (see ReportRepository.occupancyRows) is
+     * reused, not redefined. A showtime/hall absent from either count map
+     * (zero bookings / — never happens for hall, every hall has seats)
+     * defaults to 0 via getOrDefault, mirroring the LEFT JOIN + COALESCE
+     * shape of that same report query.
+     */
+    private List<ShowtimeResponse> toResponsesWithSeatCounts(List<Showtime> showtimes) {
+        if (showtimes.isEmpty()) {
+            return List.of();
+        }
+        List<UUID> showtimeIds = showtimes.stream().map(Showtime::getId).toList();
+        List<UUID> hallIds =
+                showtimes.stream().map(s -> s.getHall().getId()).distinct().toList();
+
+        Map<UUID, Long> bookedByShowtime = bookingSeatRepository.countConfirmedByShowtimeIdIn(showtimeIds).stream()
+                .collect(Collectors.toMap(
+                        ShowtimeBookedSeatCount::showtimeId, ShowtimeBookedSeatCount::bookedSeats));
+        Map<UUID, Long> totalByHall = seatRepository.countByHallIdIn(hallIds).stream()
+                .collect(Collectors.toMap(HallSeatCount::hallId, HallSeatCount::totalSeats));
+
+        return showtimes.stream()
+                .map(showtime -> showtimeMapper.toResponse(
+                        showtime,
+                        bookedByShowtime.getOrDefault(showtime.getId(), 0L).intValue(),
+                        totalByHall.getOrDefault(showtime.getHall().getId(), 0L).intValue()))
+                .toList();
     }
 
     @Transactional

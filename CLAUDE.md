@@ -1492,10 +1492,78 @@ logo 素材来源(TMDB 官方原始 SVG)、组件挂载点论述、详细验证�
 验证方式(读实际 computed `animationName`,不只看 class 有没有挂上)见
 `docs/DECISIONS.md`「skeleton.tsx 补 motion-reduce」。
 
+### Admin 场次管理 `/admin/showtimes`(2026-08-14)
+
+补上审计发现的最大缺口——场次此前只能靠 curl/Swagger 维护,没有对应的
+admin 页面。后端 `ShowtimeController` 的 POST(20 分钟清场冲突校验)/
+DELETE(有订单时 409)/GET 在 Phase 4 就已经齐全并测试过,这次只做了
+两处小改动,新增页面照抄 `/admin/movies` 已验证过的分页/竞态/删除确认
+模式。
+
+关键决定:
+
+- **`GET /showtimes` 没有改成分页**:这是顾客端选座流程共用的公开端点
+  (`listShowtimesByMovie`),把返回类型从 `List<T>` 改成 `Page<T>` 会
+  改变 JSON 形状、砸了顾客端的解析。Admin 列表页复用这同一个公开端点
+  (加了 `movieId`/`hallId`/`date` 过滤),前端按天浏览,不做服务端
+  分页——这个项目的场次数据量级(1 分店 3 影厅)不值得为此新开一个
+  专属的管理端分页接口。
+- **`ShowtimeResponse` 新增 `bookedSeats`/`totalSeats` 两个字段**
+  (additive,不破坏现有消费者):口径复用 Phase 8 occupancy 报表已经
+  验证过的"只统计 CONFIRMED"规则(和 `ReportRepository.occupancyRows`
+  同一套计数逻辑,这次换成 Spring Data JPQL 而不是原生 SQL——Phase 8
+  用原生 SQL 是为了展示复杂的 `generate_series`/`date_trunc` 聚合,这次
+  只是两个简单的 GROUP BY 计数,跟项目其余模块一样走 JPQL 更一致,不是
+  推翻 Phase 8 的选型)。两个批量查询(按 showtime id 集合查 booked、
+  按 hall id 集合查 total),不是逐场次查,避免 N+1。`ShowtimeMapper
+  .toResponse` 因此从"只吃 Showtime 实体"变成"吃 Showtime + 两个 int
+  参数",用显式 `@Mapping(source=...)` 把参数名对应到 record 字段,不
+  依赖 MapStruct 隐式的同名参数推断——这个项目对 MapStruct 生成代码
+  踩过坑(见 Admin 用户管理一节),显式声明比隐式推断更值得信任。
+- **创建表单的电影下拉只显示 `NOW_PLAYING`/`COMING_SOON`,排除
+  `ENDED`**——给已下映的电影排新场次业务上说不通;`GET /movies?status=`
+  已支持这个筛选,前端拉一次全量(`size=100`,种子数据 11 部电影完全
+  够用)按状态客户端过滤,不用为两个状态各发一次请求。
+- **开始时间选择器按影院时区(吉隆坡,UTC+8)解释,不是浏览器时区**——
+  这是"发生在影院"的事件,和顾客端的 `formatShowDate`/`formatShowTime`
+  同一类语义,和 Phase 6 G-2 的支付倒计时(故意用设备时区)刚好相反。
+  马来西亚从 1982 年起固定 UTC+8、不实行夏令时,所以不需要 Intl 查表
+  取偏移量——`lib/format.ts` 新增的 `cinemaLocalTimeToIso` 直接拼接
+  `+08:00` 后交给 `Date` 解析,和 `CINEMA_TIME_ZONE` 本身的硬编码是
+  同一条理由。
+- **创建冲突(409)在表单上翻译成中文,不是原样展示**——这是这个项目里
+  admin 表单错误处理**两种既有先例中的一种**,不是破例:`MovieForm`
+  的既有模式是原样展示 `ApiError.message`(那些消息本身已经写得够
+  清楚);但 `ShowtimeConflictException` 的消息里嵌着裸 `Instant` 时间
+  戳和影厅名,读起来是内部细节转储。没有尝试解析这条消息去拼出更具体
+  的提示(比如"和 X 点到 Y 点那场冲突")——这个项目一贯的原则是不解析
+  错误字符串取结构化数据(参考 Phase 5 座位冲突处理的先例),所以就是
+  一句固定但清楚的中文提示。删除时的 409("仍有订单")继续原样展示,
+  跟 movies 页面删除保护是同一个模式——这条消息本身已经是完整的一句
+  话,不需要改写。
+- **没有编辑功能**:和后端契约一致(Phase 4"没有更新场次的 API",排期
+  错了删除重建),`ShowtimeForm` 不接受 `initialShowtime`,不是"先做成
+  `MovieForm` 那种 create/edit 共用再阉割掉一半",从一开始就只有创建
+  这一种用途。
+- **测试**:`ShowtimeAdminFlowIntegrationTest` 原有 5 个用例(创建/冲突/
+  边界/401/403)覆盖的核心逻辑这次完全没动,新增 3 个:hallId 筛选
+  返回正确子集、`bookedSeats` 只统计 CONFIRMED(直接用 autowired
+  repository 构造一个 CONFIRMED + 一个 PENDING booking 断言,不走完整
+  Stripe webhook 流程——这次要验证的是计数 SQL,不是支付流程,后者已
+  经在 Payment 相关测试里覆盖过)、删除有订单的场次仍返回 409(此前
+  完全没有测试覆盖,原有的删除测试只覆盖了"零订单场次删除成功"这一
+  半,顺手补上)。`mvn clean test` 全量跑过,163/163 全绿,没有任何
+  既有测试因为这次改动放宽断言或删除。
+
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
 - 评价评分
 - 邮件/短信通知
+- **电影上架状态历史/审计追踪**(`movie_status_history` 表 + 独立
+  `PATCH /movies/{id}/status` 接口,和通用 `PUT` 分离,避免历史记录被
+  无关字段编辑一并污染)——设计方向已讨论确认,尚未实现,待单独立项。
+  和上面三条不同:不是"价值低不做",只是还没排上;真要做的话在第 3 节
+  另开一个 Phase/条目记录设计权衡,不要直接在这一行展开。
 
 ---
 

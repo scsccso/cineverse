@@ -144,6 +144,46 @@ export interface ShowtimeResponse {
   price: number;
   createdAt: string;
   updatedAt: string;
+  /** CONFIRMED bookings only — same counting rule as the admin occupancy report. */
+  bookedSeats: number;
+  /** Bookable seat units in this showtime's hall (one row per COUPLE seat, not two). */
+  totalSeats: number;
+}
+
+/** POST /api/v1/showtimes body — mirrors the backend's CreateShowtimeRequest
+ * exactly. No endTime field: the backend always derives it from
+ * startTime + movie.durationMinutes, never accepts one directly. There is no
+ * update/PATCH counterpart — showtimes are create-or-delete only, see
+ * CLAUDE.md's Phase 4 "没有更新场次的 API" decision. */
+export interface CreateShowtimeRequest {
+  movieId: string;
+  hallId: string;
+  /** ISO-8601 instant (UTC), e.g. "2026-09-01T14:00:00Z" — see lib/validation/admin-showtimes.ts
+   * for how a cinema-local wall-clock time picked in the form becomes this. */
+  startTime: string;
+  price: number;
+}
+
+/** GET /api/v1/cinemas — this MVP always has exactly one, but the admin showtime
+ * form still asks the API rather than hardcoding it, so a second cinema (if one's
+ * ever added) doesn't require a frontend change here. */
+export interface CinemaResponse {
+  id: string;
+  name: string;
+  address: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** GET /api/v1/cinemas/{id}/halls */
+export interface HallResponse {
+  id: string;
+  cinemaId: string;
+  name: string;
+  totalRows: number;
+  totalColumns: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type SeatType = "STANDARD" | "COUPLE";

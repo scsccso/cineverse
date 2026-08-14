@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Clapperboard, ArrowLeft, LayoutDashboard, Film, Users } from "lucide-react";
+import { Clapperboard, ArrowLeft, LayoutDashboard, Film, CalendarClock, Users } from "lucide-react";
 import { LogoutButton } from "@/components/auth/logout-button";
 import type { UserResponse } from "@/lib/api/types";
 
@@ -25,6 +25,7 @@ export function AdminHeader({ user }: { user: UserResponse | null }) {
   const navItems = [
     { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/admin/movies", label: "Movies", icon: Film },
+    { href: "/admin/showtimes", label: "Showtimes", icon: CalendarClock },
     { href: "/admin/users", label: "Users", icon: Users },
   ];
 
