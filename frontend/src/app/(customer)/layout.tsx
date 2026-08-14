@@ -1,5 +1,6 @@
 import { Navbar } from "@/components/layout/navbar";
 import { PageTransition } from "@/components/motion/page-transition";
+import { TmdbAttribution } from "@/components/layout/tmdb-attribution";
 
 /**
  * All customer-facing "chrome" (the dark Liquid Glass Navbar + route
@@ -33,6 +34,7 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
       <main className="flex-1">
         <PageTransition>{children}</PageTransition>
       </main>
+      <TmdbAttribution />
     </div>
   );
 }
