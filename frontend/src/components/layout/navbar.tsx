@@ -11,8 +11,8 @@ import { LogoutButton } from "@/components/auth/logout-button";
 import { cn } from "@/lib/utils";
 
 const movieSectionLinks = [
-  { label: "正在热映", href: "/#now-playing" },
-  { label: "即将上映", href: "/#coming-soon" },
+  { label: "Now Playing", href: "/#now-playing" },
+  { label: "Coming Soon", href: "/#coming-soon" },
 ];
 
 export function Navbar() {
@@ -63,10 +63,10 @@ export function Navbar() {
           ))}
           <span
             aria-disabled
-            title="即将推出"
+            title="Coming soon"
             className="cursor-not-allowed text-sm text-muted-foreground/50"
           >
-            影院
+            Cinemas
           </span>
         </nav>
 
@@ -82,7 +82,7 @@ export function Navbar() {
           className="flex h-11 w-11 items-center justify-center text-foreground md:hidden"
           aria-expanded={mobileOpen}
           aria-controls="mobile-nav-panel"
-          aria-label={mobileOpen ? "关闭菜单" : "打开菜单"}
+          aria-label={mobileOpen ? "Close menu" : "Open menu"}
           onClick={() => setMobileOpen((open) => !open)}
         >
           {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
@@ -106,10 +106,10 @@ export function Navbar() {
             ))}
             <span
               aria-disabled
-              title="即将推出"
+              title="Coming soon"
               className="flex h-11 items-center text-sm text-muted-foreground/50"
             >
-              影院
+              Cinemas
             </span>
           </nav>
 
@@ -154,7 +154,7 @@ function AuthSection({ status, user, stacked = false }: AuthSectionProps) {
             stacked && "w-full",
           )}
         >
-          登录
+          Log in
         </Link>
         <Link
           href="/register"
@@ -163,7 +163,7 @@ function AuthSection({ status, user, stacked = false }: AuthSectionProps) {
             stacked && "w-full",
           )}
         >
-          注册
+          Sign up
         </Link>
       </>
     );
@@ -179,7 +179,7 @@ function AuthSection({ status, user, stacked = false }: AuthSectionProps) {
             stacked ? "h-11 items-center" : "items-center",
           )}
         >
-          管理后台
+          Admin
         </Link>
       )}
       {/* Sits in the shared AuthSection, so it appears in the desktop row and
@@ -192,7 +192,7 @@ function AuthSection({ status, user, stacked = false }: AuthSectionProps) {
           stacked ? "h-11 items-center" : "items-center",
         )}
       >
-        我的订单
+        My Bookings
       </Link>
       <Link
         href="/profile"
@@ -201,7 +201,7 @@ function AuthSection({ status, user, stacked = false }: AuthSectionProps) {
           stacked ? "h-11 items-center" : "items-center",
         )}
       >
-        {user?.fullName ?? "我的账户"}
+        {user?.fullName ?? "My Account"}
       </Link>
       <LogoutButton className={stacked ? "h-11 w-full" : undefined} />
     </>
