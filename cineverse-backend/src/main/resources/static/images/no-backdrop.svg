@@ -6,5 +6,5 @@
     <circle cx="0" cy="10" r="14" />
     <path d="M0 2 L6 10 L0 18 L-6 10 Z" fill="#4a4a4a" stroke="none"/>
   </g>
-  <text x="400" y="270" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#7a7a7a">暂无背景图</text>
+  <text x="400" y="270" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#7a7a7a">No backdrop available</text>
 </svg>

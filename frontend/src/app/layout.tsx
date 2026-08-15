@@ -37,7 +37,7 @@ const clashDisplay = localFont({
 
 export const metadata: Metadata = {
   title: "CineVerse",
-  description: "CineVerse 电影院订票系统",
+  description: "Online cinema seat booking system",
 };
 
 export default function RootLayout({
