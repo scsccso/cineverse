@@ -71,38 +71,38 @@ export default function NewMoviePage() {
     <section className="mx-auto max-w-2xl px-6 py-10">
       <Link href="/admin/movies" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" aria-hidden />
-        返回电影列表
+        Back to Movies
       </Link>
 
       <header className="mb-6">
-        <h1 className="font-heading text-2xl font-semibold text-foreground">新增电影</h1>
+        <h1 className="font-heading text-2xl font-semibold text-foreground">Add Movie</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {mode === "tmdb" && !tmdbPrefill
-            ? "搜索 TMDB 并选择匹配的条目,自动预填片名/简介/时长/预告片/海报/背景图——分级、评分、状态、分类仍需手动填写。"
-            : "海报/背景图需要在电影创建之后单独上传——提交后会跳转到该电影的编辑页,在那里完成图片上传。"}
+            ? "Search TMDB and pick a matching entry to auto-fill the title/description/duration/trailer/poster/backdrop — content rating, user rating, status, and genres still need to be filled in manually."
+            : "Posters and backdrops need to be uploaded separately after the movie is created — submitting will take you to the movie's edit page to upload images there."}
         </p>
       </header>
 
       <Card className="shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <CardTitle>{mode === "tmdb" && !tmdbPrefill ? "搜索 TMDB" : "基本信息"}</CardTitle>
+          <CardTitle>{mode === "tmdb" && !tmdbPrefill ? "Search TMDB" : "Basic Info"}</CardTitle>
           {mode === "tmdb" && tmdbPrefill && (
             <Button type="button" variant="ghost" size="sm" onClick={() => setTmdbPrefill(null)}>
-              重新搜索
+              Search Again
             </Button>
           )}
         </CardHeader>
         <CardContent>
           {genresError ? (
-            <p className="py-8 text-center text-sm text-destructive">分类列表加载失败,请刷新重试</p>
+            <p className="py-8 text-center text-sm text-destructive">Failed to load genres. Please refresh and try again.</p>
           ) : !genres ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">加载中...</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">Loading...</p>
           ) : mode === "tmdb" && !tmdbPrefill ? (
             <div className="space-y-4">
               <TmdbSearchPicker onSelect={setTmdbPrefill} />
               <div className="border-t border-border pt-4 text-center">
                 <Button type="button" variant="ghost" size="sm" onClick={() => setMode("manual")}>
-                  找不到?手动创建
+                  Can&apos;t find it? Create manually
                 </Button>
               </div>
             </div>
@@ -112,8 +112,8 @@ export default function NewMoviePage() {
               tmdbPrefill={tmdbPrefill ?? undefined}
               onSave={(request) => callAuthorized((token) => createMovie(token, request))}
               onSaved={handleSaved}
-              submitLabel="创建电影"
-              submittingLabel="创建中…"
+              submitLabel="Create Movie"
+              submittingLabel="Creating…"
             />
           )}
         </CardContent>

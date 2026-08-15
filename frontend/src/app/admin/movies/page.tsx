@@ -13,9 +13,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 const STATUS_LABELS: Record<MovieStatus, string> = {
-  NOW_PLAYING: "正在热映",
-  COMING_SOON: "即将上映",
-  ENDED: "已下映",
+  NOW_PLAYING: "Now Playing",
+  COMING_SOON: "Coming Soon",
+  ENDED: "Ended",
 };
 
 const STATUS_BADGE_VARIANT: Record<MovieStatus, "default" | "secondary" | "outline"> = {
@@ -59,15 +59,15 @@ export default function AdminMoviesPage() {
       .catch(() => {
         if (requestIdRef.current !== thisRequestId) return;
         setMoviesPage(null);
-        setError("加载电影列表失败");
+        setError("Failed to load movies");
       });
   }, [page]);
 
   const handleDelete = (movie: MovieResponse) => {
     setConfirmDialog({
       isOpen: true,
-      title: "删除电影",
-      description: `确定要删除《${movie.title}》吗？此操作不可逆。`,
+      title: "Delete Movie",
+      description: `Are you sure you want to delete "${movie.title}"? This action cannot be undone.`,
       action: async () => {
         try {
           await callAuthorized((token) => deleteMovie(token, movie.id));
@@ -77,7 +77,7 @@ export default function AdminMoviesPage() {
           // Shown as-is — e.g. the 409 "still has scheduled showtimes"
           // message from MovieHasScheduledShowtimesException is already
           // written to be read directly, no need to re-word it here.
-          setActionError(err instanceof ApiError ? err.message : "删除失败,请稍后重试");
+          setActionError(err instanceof ApiError ? err.message : "Failed to delete. Please try again later.");
         }
       },
     });
@@ -92,13 +92,13 @@ export default function AdminMoviesPage() {
     <section className="mx-auto max-w-6xl px-6 py-10">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-heading text-2xl font-semibold text-foreground">管理后台 · 电影管理</h1>
-          <p className="mt-1 text-sm text-muted-foreground">电影信息、状态与海报/背景图管理</p>
+          <h1 className="font-heading text-2xl font-semibold text-foreground">Admin · Movies</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Manage movie info, status, and poster/backdrop images</p>
         </div>
         <Link href="/admin/movies/new" className="inline-flex">
           <Button type="button" className="h-11">
             <Plus className="size-4" aria-hidden />
-            新增电影
+            Add Movie
           </Button>
         </Link>
       </header>
@@ -111,24 +111,24 @@ export default function AdminMoviesPage() {
 
       <Card className="shadow-sm">
         <CardHeader>
-          <CardTitle>电影列表</CardTitle>
+          <CardTitle>Movies</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">加载中...</div>
+            <div className="py-8 text-center text-sm text-muted-foreground">Loading...</div>
           ) : !moviesPage || moviesPage.content.length === 0 ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">暂无电影数据</div>
+            <div className="py-8 text-center text-sm text-muted-foreground">No movies yet</div>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="w-full text-sm">
-                <caption className="sr-only">电影列表</caption>
+                <caption className="sr-only">Movies</caption>
                 <thead>
                   <tr className="border-b border-border bg-muted/50 text-left text-muted-foreground">
-                    <th scope="col" className="px-3 py-2 font-medium">海报</th>
-                    <th scope="col" className="px-3 py-2 font-medium">片名</th>
-                    <th scope="col" className="px-3 py-2 font-medium">状态</th>
-                    <th scope="col" className="px-3 py-2 font-medium">分类</th>
-                    <th scope="col" className="px-3 py-2 font-medium text-right">操作</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Poster</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Title</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Status</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Genres</th>
+                    <th scope="col" className="px-3 py-2 font-medium text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -160,11 +160,11 @@ export default function AdminMoviesPage() {
                         <div className="flex justify-end gap-2">
                           <Link href={`/admin/movies/${movie.id}/edit`}>
                             <Button type="button" variant="outline" size="sm">
-                              编辑
+                              Edit
                             </Button>
                           </Link>
                           <Button type="button" variant="destructive" size="sm" onClick={() => handleDelete(movie)}>
-                            删除
+                            Delete
                           </Button>
                         </div>
                       </td>
@@ -178,7 +178,7 @@ export default function AdminMoviesPage() {
           {moviesPage && moviesPage.totalPages > 1 && (
             <div className="mt-4 flex items-center justify-between">
               <p className="text-sm text-muted-foreground">
-                共 {moviesPage.totalElements} 条,第 {moviesPage.number + 1} / {moviesPage.totalPages} 页
+                {moviesPage.totalElements} total, page {moviesPage.number + 1} of {moviesPage.totalPages}
               </p>
               <div className="flex gap-2">
                 <Button
@@ -188,7 +188,7 @@ export default function AdminMoviesPage() {
                   disabled={moviesPage.first || loading}
                   onClick={() => setPage((p) => Math.max(0, p - 1))}
                 >
-                  上一页
+                  Previous
                 </Button>
                 <Button
                   type="button"
@@ -197,7 +197,7 @@ export default function AdminMoviesPage() {
                   disabled={moviesPage.last || loading}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  下一页
+                  Next
                 </Button>
               </div>
             </div>
@@ -227,10 +227,10 @@ export default function AdminMoviesPage() {
 
               <div className="mt-6 flex justify-end gap-3">
                 <Button type="button" variant="outline" onClick={closeDialog}>
-                  取消
+                  Cancel
                 </Button>
                 <Button type="button" variant="default" onClick={confirmDialog.action}>
-                  确认
+                  Confirm
                 </Button>
               </div>
             </CardContent>

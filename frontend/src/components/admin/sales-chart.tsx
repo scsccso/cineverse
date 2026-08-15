@@ -31,7 +31,7 @@ export function SalesChart({ buckets, currency }: SalesChartProps) {
   }));
 
   return (
-    <div className="h-72 w-full" role="img" aria-label="按时间段的营收柱状图">
+    <div className="h-72 w-full" role="img" aria-label="Bar chart of revenue by period">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
           <CartesianGrid stroke="var(--border)" vertical={false} />
@@ -81,9 +81,9 @@ function renderSalesTooltip(currency: string) {
         <p className="font-medium text-popover-foreground">{label}</p>
         <p className="mt-1 font-mono font-semibold text-popover-foreground">
           {formatCurrency(point.revenue, currency)}
-          <span className="ml-1.5 font-sans font-normal text-muted-foreground">营收</span>
+          <span className="ml-1.5 font-sans font-normal text-muted-foreground">Revenue</span>
         </p>
-        <p className="text-muted-foreground">{point.bookingCount} 笔订单</p>
+        <p className="text-muted-foreground">{point.bookingCount} bookings</p>
       </div>
     );
   };

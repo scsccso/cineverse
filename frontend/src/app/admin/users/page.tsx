@@ -48,7 +48,7 @@ export default function AdminUsersPage() {
       .catch(() => {
         if (requestIdRef.current !== thisRequestId) return;
         setUsersPage(null);
-        setError("加载用户列表失败");
+        setError("Failed to load users");
       });
   }, [callAuthorized, page]);
 
@@ -56,8 +56,8 @@ export default function AdminUsersPage() {
     const newRole = user.role === "ADMIN" ? "CUSTOMER" : "ADMIN";
     setConfirmDialog({
       isOpen: true,
-      title: "更改用户角色",
-      description: `确定要将 ${user.email} 的角色更改为 ${newRole} 吗？`,
+      title: "Change User Role",
+      description: `Are you sure you want to change ${user.email}'s role to ${newRole}?`,
       action: async () => {
         try {
           await callAuthorized((token) => updateUserRole(token, user.id, { role: newRole }));
@@ -70,7 +70,7 @@ export default function AdminUsersPage() {
           });
           closeDialog();
         } catch {
-          setActionError("角色更新失败，请重试");
+          setActionError("Failed to update role. Please try again.");
         }
       },
     });
@@ -79,8 +79,8 @@ export default function AdminUsersPage() {
   const handleDelete = (user: UserResponse) => {
     setConfirmDialog({
       isOpen: true,
-      title: "删除用户",
-      description: `确定要删除用户 ${user.email} 吗？此操作不可逆。`,
+      title: "Delete User",
+      description: `Are you sure you want to delete ${user.email}? This action cannot be undone.`,
       action: async () => {
         try {
           await callAuthorized((token) => deleteUser(token, user.id));
@@ -94,9 +94,9 @@ export default function AdminUsersPage() {
           closeDialog();
         } catch (err: unknown) {
           if (err instanceof ApiError && err.status === 409) {
-            setActionError("无法删除：该用户拥有订单记录");
+            setActionError("Can't delete: this user has booking records");
           } else {
-            setActionError("删除失败，请重试");
+            setActionError("Failed to delete. Please try again.");
           }
         }
       },
@@ -111,8 +111,8 @@ export default function AdminUsersPage() {
   return (
     <section className="mx-auto max-w-6xl px-6 py-10">
       <header className="mb-6">
-        <h1 className="font-heading text-2xl font-semibold text-foreground">管理后台 · 用户管理</h1>
-        <p className="mt-1 text-sm text-muted-foreground">管理平台用户与权限</p>
+        <h1 className="font-heading text-2xl font-semibold text-foreground">Admin · Users</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Manage platform users and permissions</p>
       </header>
 
       {error && (
@@ -123,24 +123,24 @@ export default function AdminUsersPage() {
 
       <Card className="shadow-sm">
         <CardHeader>
-          <CardTitle>用户列表</CardTitle>
+          <CardTitle>Users</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">加载中...</div>
+            <div className="py-8 text-center text-sm text-muted-foreground">Loading...</div>
           ) : !usersPage || usersPage.content.length === 0 ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">暂无用户数据</div>
+            <div className="py-8 text-center text-sm text-muted-foreground">No users yet</div>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="w-full text-sm">
-                <caption className="sr-only">用户列表</caption>
+                <caption className="sr-only">Users</caption>
                 <thead>
                   <tr className="border-b border-border bg-muted/50 text-left text-muted-foreground">
-                    <th scope="col" className="px-3 py-2 font-medium">邮箱</th>
-                    <th scope="col" className="px-3 py-2 font-medium">姓名</th>
-                    <th scope="col" className="px-3 py-2 font-medium">角色</th>
-                    <th scope="col" className="px-3 py-2 font-medium">注册时间</th>
-                    <th scope="col" className="px-3 py-2 font-medium text-right">操作</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Email</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Name</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Role</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Joined</th>
+                    <th scope="col" className="px-3 py-2 font-medium text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -163,7 +163,7 @@ export default function AdminUsersPage() {
                             disabled={user.id === currentUser?.id}
                             onClick={() => handleRoleToggle(user)}
                           >
-                            切换角色
+                            Switch Role
                           </Button>
                           <Button
                             type="button"
@@ -172,7 +172,7 @@ export default function AdminUsersPage() {
                             disabled={user.id === currentUser?.id}
                             onClick={() => handleDelete(user)}
                           >
-                            删除
+                            Delete
                           </Button>
                         </div>
                       </td>
@@ -187,7 +187,7 @@ export default function AdminUsersPage() {
           {usersPage && usersPage.totalPages > 1 && (
             <div className="mt-4 flex items-center justify-between">
               <p className="text-sm text-muted-foreground">
-                共 {usersPage.totalElements} 条，第 {usersPage.number + 1} / {usersPage.totalPages} 页
+                {usersPage.totalElements} total, page {usersPage.number + 1} of {usersPage.totalPages}
               </p>
               <div className="flex gap-2">
                 <Button
@@ -197,7 +197,7 @@ export default function AdminUsersPage() {
                   disabled={usersPage.first || loading}
                   onClick={() => setPage((p) => Math.max(0, p - 1))}
                 >
-                  上一页
+                  Previous
                 </Button>
                 <Button
                   type="button"
@@ -206,7 +206,7 @@ export default function AdminUsersPage() {
                   disabled={usersPage.last || loading}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  下一页
+                  Next
                 </Button>
               </div>
             </div>
@@ -237,10 +237,10 @@ export default function AdminUsersPage() {
 
               <div className="mt-6 flex justify-end gap-3">
                 <Button type="button" variant="outline" onClick={closeDialog}>
-                  取消
+                  Cancel
                 </Button>
                 <Button type="button" variant="default" onClick={confirmDialog.action}>
-                  确认
+                  Confirm
                 </Button>
               </div>
             </CardContent>

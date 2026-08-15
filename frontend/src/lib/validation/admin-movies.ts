@@ -18,19 +18,19 @@ function optionalText(max: number, message: string) {
  * is required (no fallback) and userRating is optional (blank = no rating,
  * not 0 — 0 is itself a valid, if unusual, rating). */
 export const movieFormSchema = z.object({
-  title: z.string().trim().min(1, "请输入片名").max(255, "片名最多 255 个字符"),
+  title: z.string().trim().min(1, "Please enter a title").max(255, "Title must be at most 255 characters"),
   description: z
     .string()
     .optional()
     .transform((value) => (value === undefined || value.trim() === "" ? null : value)),
-  tagline: optionalText(500, "宣传语最多 500 个字符"),
+  tagline: optionalText(500, "Tagline must be at most 500 characters"),
   durationMinutes: z
     .string()
     .trim()
-    .min(1, "请输入时长")
-    .refine((value) => Number.isFinite(Number(value)) && Number(value) > 0, "时长必须是大于 0 的数字")
+    .min(1, "Please enter a duration")
+    .refine((value) => Number.isFinite(Number(value)) && Number(value) > 0, "Duration must be a number greater than 0")
     .transform((value) => Math.round(Number(value))),
-  contentRating: optionalText(20, "分级最多 20 个字符"),
+  contentRating: optionalText(20, "Content rating must be at most 20 characters"),
   userRating: z
     .string()
     .trim()
@@ -40,11 +40,11 @@ export const movieFormSchema = z.object({
         value === undefined ||
         value === "" ||
         (Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 10),
-      "评分需在 0~10 之间",
+      "Rating must be between 0 and 10",
     )
     .transform((value) => (value === undefined || value === "" ? null : Number(value))),
-  trailerUrl: optionalText(500, "链接最多 500 个字符"),
-  status: z.enum(MOVIE_STATUS_VALUES, { message: "请选择状态" }),
+  trailerUrl: optionalText(500, "URL must be at most 500 characters"),
+  status: z.enum(MOVIE_STATUS_VALUES, { message: "Please select a status" }),
 });
 
 /** The raw, string-typed shape react-hook-form's registered inputs produce —

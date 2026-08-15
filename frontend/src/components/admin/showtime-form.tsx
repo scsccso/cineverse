@@ -26,7 +26,8 @@ import { SubmitProgressBar } from "@/components/motion/submit-progress-bar";
  * fixed, clear message stands in for it instead. Every other ApiError falls
  * back to MovieForm's "show ApiError.message as-is" convention — this is the
  * one deliberate exception, not a wholesale departure from that pattern. */
-const CONFLICT_MESSAGE = "所选时间段与该影厅已有场次冲突(含 20 分钟清场缓冲),请更换时间或影厅。";
+const CONFLICT_MESSAGE =
+  "The selected time conflicts with an existing showtime in this hall (including the 20-minute changeover buffer). Please choose a different time or hall.";
 
 export interface ShowtimeFormProps {
   /** Pre-filtered by the caller to NOW_PLAYING/COMING_SOON — see admin/showtimes/new/page.tsx. */
@@ -66,7 +67,7 @@ export function ShowtimeForm({ movies, halls, onSave, onSaved }: ShowtimeFormPro
       } else if (error instanceof ApiError) {
         setFormError(error.message);
       } else {
-        setFormError("创建失败,请稍后重试");
+        setFormError("Failed to create. Please try again later.");
       }
     }
   }
@@ -78,9 +79,9 @@ export function ShowtimeForm({ movies, halls, onSave, onSaved }: ShowtimeFormPro
         <AnimatedFormBanner message={formError} />
 
         <Field data-invalid={!!errors.movieId || undefined}>
-          <FieldLabel htmlFor="movieId">电影</FieldLabel>
+          <FieldLabel htmlFor="movieId">Movie</FieldLabel>
           <select id="movieId" aria-invalid={!!errors.movieId} className={SELECT_CLASSNAME} {...register("movieId")}>
-            <option value="">请选择电影</option>
+            <option value="">Select a movie</option>
             {movies.map((movie) => (
               <option key={movie.id} value={movie.id}>
                 {movie.title}
@@ -91,9 +92,9 @@ export function ShowtimeForm({ movies, halls, onSave, onSaved }: ShowtimeFormPro
         </Field>
 
         <Field data-invalid={!!errors.hallId || undefined}>
-          <FieldLabel htmlFor="hallId">影厅</FieldLabel>
+          <FieldLabel htmlFor="hallId">Hall</FieldLabel>
           <select id="hallId" aria-invalid={!!errors.hallId} className={SELECT_CLASSNAME} {...register("hallId")}>
-            <option value="">请选择影厅</option>
+            <option value="">Select a hall</option>
             {halls.map((hall) => (
               <option key={hall.id} value={hall.id}>
                 {hall.name}
@@ -104,14 +105,14 @@ export function ShowtimeForm({ movies, halls, onSave, onSaved }: ShowtimeFormPro
         </Field>
 
         <Field data-invalid={!!errors.startTime || undefined}>
-          <FieldLabel htmlFor="startTime">开始时间</FieldLabel>
+          <FieldLabel htmlFor="startTime">Start Time</FieldLabel>
           <Input id="startTime" type="datetime-local" aria-invalid={!!errors.startTime} {...register("startTime")} />
-          <FieldDescription>按影院当地时间填写(吉隆坡,UTC+8)。</FieldDescription>
+          <FieldDescription>Enter in the cinema&apos;s local time (Kuala Lumpur, UTC+8).</FieldDescription>
           <AnimatedFieldError message={errors.startTime?.message} />
         </Field>
 
         <Field data-invalid={!!errors.price || undefined}>
-          <FieldLabel htmlFor="price">票价(MYR)</FieldLabel>
+          <FieldLabel htmlFor="price">Price (MYR)</FieldLabel>
           <Input
             id="price"
             type="number"
@@ -125,7 +126,7 @@ export function ShowtimeForm({ movies, halls, onSave, onSaved }: ShowtimeFormPro
         </Field>
 
         <Button type="submit" disabled={isSubmitting} className="h-11 text-base">
-          {isSubmitting ? "创建中…" : "创建场次"}
+          {isSubmitting ? "Creating…" : "Create Showtime"}
         </Button>
       </FieldGroup>
     </form>

@@ -40,7 +40,7 @@ export function MovieImageUpload({ label, aspect, currentUrl, onUpload, onUpload
       const saved = await onUpload(file);
       onUploaded(saved);
     } catch (uploadError) {
-      setError(uploadError instanceof ApiError ? uploadError.message : "上传失败,请稍后重试");
+      setError(uploadError instanceof ApiError ? uploadError.message : "Upload failed. Please try again later.");
     } finally {
       setUploading(false);
     }
@@ -73,9 +73,9 @@ export function MovieImageUpload({ label, aspect, currentUrl, onUpload, onUpload
             onClick={() => inputRef.current?.click()}
           >
             <Upload className="size-4" aria-hidden />
-            {uploading ? "上传中…" : "上传新图片"}
+            {uploading ? "Uploading…" : "Upload New Image"}
           </Button>
-          <p className="text-xs text-muted-foreground">jpg/png/webp,单文件不超过 5MB</p>
+          <p className="text-xs text-muted-foreground">jpg/png/webp, up to 5MB per file</p>
         </div>
       </div>
       <AnimatedFieldError message={error ?? undefined} />

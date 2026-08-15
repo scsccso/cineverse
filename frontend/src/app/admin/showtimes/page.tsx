@@ -50,15 +50,15 @@ export default function AdminShowtimesPage() {
       .catch(() => {
         if (requestIdRef.current !== thisRequestId) return;
         setResult(null);
-        setError("加载场次列表失败");
+        setError("Failed to load showtimes");
       });
   }, [date]);
 
   const handleDelete = (showtime: ShowtimeResponse) => {
     setConfirmDialog({
       isOpen: true,
-      title: "删除场次",
-      description: `确定要删除《${showtime.movie.title}》${formatShowTime(showtime.startTime)} 这一场吗?此操作不可逆。`,
+      title: "Delete Showtime",
+      description: `Are you sure you want to delete "${showtime.movie.title}" at ${formatShowTime(showtime.startTime)}? This action cannot be undone.`,
       action: async () => {
         try {
           await callAuthorized((token) => deleteShowtime(token, showtime.id));
@@ -68,7 +68,7 @@ export default function AdminShowtimesPage() {
           // Shown as-is, unlike the create form's 409 — "still has bookings"
           // is already a complete, clear sentence, nothing to translate.
           // Same reasoning as admin/movies/page.tsx's delete handler.
-          setActionError(err instanceof ApiError ? err.message : "删除失败,请稍后重试");
+          setActionError(err instanceof ApiError ? err.message : "Failed to delete. Please try again later.");
         }
       },
     });
@@ -83,20 +83,20 @@ export default function AdminShowtimesPage() {
     <section className="mx-auto max-w-6xl px-6 py-10">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-heading text-2xl font-semibold text-foreground">管理后台 · 场次管理</h1>
-          <p className="mt-1 text-sm text-muted-foreground">按日期浏览排期,新增或删除场次</p>
+          <h1 className="font-heading text-2xl font-semibold text-foreground">Admin · Showtimes</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Browse the schedule by date, add or delete showtimes</p>
         </div>
         <Link href="/admin/showtimes/new" className="inline-flex">
           <Button type="button" className="h-11">
             <Plus className="size-4" aria-hidden />
-            新增场次
+            Add Showtime
           </Button>
         </Link>
       </header>
 
       <div className="mb-6 max-w-56">
         <Field>
-          <FieldLabel htmlFor="date-filter">日期</FieldLabel>
+          <FieldLabel htmlFor="date-filter">Date</FieldLabel>
           <Input id="date-filter" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
         </Field>
       </div>
@@ -109,25 +109,25 @@ export default function AdminShowtimesPage() {
 
       <Card className="shadow-sm">
         <CardHeader>
-          <CardTitle>场次列表</CardTitle>
+          <CardTitle>Showtimes</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">加载中...</div>
+            <div className="py-8 text-center text-sm text-muted-foreground">Loading...</div>
           ) : !showtimes || showtimes.length === 0 ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">这一天没有排期</div>
+            <div className="py-8 text-center text-sm text-muted-foreground">No showtimes on this day</div>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="w-full text-sm">
-                <caption className="sr-only">场次列表</caption>
+                <caption className="sr-only">Showtimes</caption>
                 <thead>
                   <tr className="border-b border-border bg-muted/50 text-left text-muted-foreground">
-                    <th scope="col" className="px-3 py-2 font-medium">电影</th>
-                    <th scope="col" className="px-3 py-2 font-medium">影厅</th>
-                    <th scope="col" className="px-3 py-2 font-medium">时间</th>
-                    <th scope="col" className="px-3 py-2 font-medium">票价</th>
-                    <th scope="col" className="px-3 py-2 font-medium">座位</th>
-                    <th scope="col" className="px-3 py-2 font-medium text-right">操作</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Movie</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Hall</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Time</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Price</th>
+                    <th scope="col" className="px-3 py-2 font-medium">Seats</th>
+                    <th scope="col" className="px-3 py-2 font-medium text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -159,7 +159,7 @@ export default function AdminShowtimesPage() {
                       </td>
                       <td className="px-3 py-2 text-right">
                         <Button type="button" variant="destructive" size="sm" onClick={() => handleDelete(showtime)}>
-                          删除
+                          Delete
                         </Button>
                       </td>
                     </tr>
@@ -193,10 +193,10 @@ export default function AdminShowtimesPage() {
 
               <div className="mt-6 flex justify-end gap-3">
                 <Button type="button" variant="outline" onClick={closeDialog}>
-                  取消
+                  Cancel
                 </Button>
                 <Button type="button" variant="default" onClick={confirmDialog.action}>
-                  确认
+                  Confirm
                 </Button>
               </div>
             </CardContent>

@@ -71,8 +71,8 @@ export function TmdbSearchPicker({ onSelect }: TmdbSearchPickerProps) {
       // than shown as-is, unlike the CRUD 409s elsewhere in this feature.
       setSearchError(
         error instanceof ApiError && error.status === 502
-          ? "TMDB 搜索暂时不可用,请使用下方的手动创建"
-          : "搜索失败,请重试",
+          ? "TMDB search is temporarily unavailable — use manual creation below"
+          : "Search failed. Please try again.",
       );
     } finally {
       if (requestIdRef.current === thisRequestId) setSearching(false);
@@ -88,8 +88,8 @@ export function TmdbSearchPicker({ onSelect }: TmdbSearchPickerProps) {
     } catch (error) {
       setSelectError(
         error instanceof ApiError && error.status === 502
-          ? "获取详情失败,TMDB 暂时不可用,请使用下方的手动创建"
-          : "获取详情失败,请重试",
+          ? "Failed to fetch details — TMDB is temporarily unavailable, use manual creation below"
+          : "Failed to fetch details. Please try again.",
       );
     } finally {
       setSelectingId(null);
@@ -102,12 +102,12 @@ export function TmdbSearchPicker({ onSelect }: TmdbSearchPickerProps) {
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="输入片名搜索 TMDB…"
-          aria-label="TMDB 片名搜索"
+          placeholder="Enter a title to search TMDB…"
+          aria-label="TMDB title search"
         />
         <Button type="submit" disabled={searching || !query.trim()} className="shrink-0">
           {searching ? <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <Search className="size-4" aria-hidden />}
-          {searching ? "搜索中…" : "搜索"}
+          {searching ? "Searching…" : "Search"}
         </Button>
       </form>
       <AnimatedFieldError message={searchError ?? undefined} />
@@ -130,20 +130,20 @@ export function TmdbSearchPicker({ onSelect }: TmdbSearchPickerProps) {
       ) : results && results.length === 0 && !searchError ? (
         <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
           <SearchX className="size-8 text-muted-foreground" aria-hidden />
-          <p className="text-sm font-medium text-foreground">没有找到匹配的电影</p>
+          <p className="text-sm font-medium text-foreground">No matching movies found</p>
           <p className="max-w-sm text-sm text-muted-foreground">
-            检查一下片名拼写,或者换一个关键词(试试原版英文片名)。也可以直接用下方的「手动创建」自行录入。
+            Double-check the spelling, or try a different keyword (the original English title often works better). You can also enter it manually below.
           </p>
         </div>
       ) : results && results.length > 0 ? (
         /* Capped + scrollable rather than growing unbounded, so the
-           "手动创建" fallback underneath stays reachable without scrolling
+           "Create manually" fallback underneath stays reachable without scrolling
            past 20 results. 34rem fits two full rows at the default admin
            width; a partially-visible row at narrower widths is the intended
            "there's more below" affordance, not a clipping bug. */
         <ul
           className="grid max-h-[34rem] grid-cols-2 gap-3 overflow-y-auto p-0.5 @md:grid-cols-3 @xl:grid-cols-4"
-          aria-label="TMDB 搜索结果"
+          aria-label="TMDB search results"
         >
           {results.map((result) => {
             const isSelecting = selectingId === result.tmdbId;
@@ -173,7 +173,7 @@ export function TmdbSearchPicker({ onSelect }: TmdbSearchPickerProps) {
                     ) : (
                       <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-muted-foreground">
                         <Film className="size-6" aria-hidden />
-                        <span className="text-xs">暂无海报</span>
+                        <span className="text-xs">No poster</span>
                       </div>
                     )}
                     {/* Immediate "you hit this one" confirmation — the detail
@@ -190,7 +190,7 @@ export function TmdbSearchPicker({ onSelect }: TmdbSearchPickerProps) {
                       <div className="absolute inset-0 flex items-center justify-center bg-primary/25">
                         <span className="flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground">
                           <Check className="size-3.5" aria-hidden />
-                          已选择
+                          Selected
                           <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden />
                         </span>
                       </div>
@@ -198,7 +198,7 @@ export function TmdbSearchPicker({ onSelect }: TmdbSearchPickerProps) {
                   </div>
                   <div className="space-y-0.5 p-2">
                     <p className="line-clamp-2 text-sm leading-snug font-medium text-foreground">{result.title}</p>
-                    <p className="font-mono text-xs text-muted-foreground">{result.releaseYear ?? "年份未知"}</p>
+                    <p className="font-mono text-xs text-muted-foreground">{result.releaseYear ?? "Year unknown"}</p>
                   </div>
                 </button>
               </li>

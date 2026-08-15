@@ -26,14 +26,14 @@ export default function AdminError({
     <section className="mx-auto max-w-lg px-6 py-16">
       <Card className="shadow-sm">
         <CardHeader>
-          <CardTitle>出了点问题</CardTitle>
+          <CardTitle>Something went wrong</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            页面加载失败,请重试。如果问题持续出现,请检查后端服务是否正常运行。
+            This page failed to load. Please try again — if the problem keeps happening, check whether the backend service is running.
           </p>
           <Button className="mt-6 h-11 w-full" onClick={() => reset()}>
-            重试
+            Try again
           </Button>
         </CardContent>
       </Card>

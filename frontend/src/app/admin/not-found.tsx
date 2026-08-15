@@ -13,14 +13,14 @@ export default function AdminNotFound() {
     <section className="mx-auto max-w-lg px-6 py-16">
       <Card className="shadow-sm">
         <CardHeader>
-          <CardTitle>页面不存在</CardTitle>
+          <CardTitle>Page not found</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            你要找的管理页面不存在,或者链接有误。
+            The admin page you&apos;re looking for doesn&apos;t exist, or the link might be incorrect.
           </p>
           <Link href="/admin/dashboard" className={cn(buttonVariants(), "mt-6 h-11 w-full")}>
-            返回管理后台首页
+            Back to Admin Dashboard
           </Link>
         </CardContent>
       </Card>

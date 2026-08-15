@@ -39,10 +39,10 @@ export function AdminHeader({ user }: { user: UserResponse | null }) {
           >
             <Clapperboard className="size-5 text-primary" aria-hidden />
             Cine<span className="text-primary">Verse</span>
-            <span className="hidden text-sm font-normal text-muted-foreground sm:inline">管理后台</span>
+            <span className="hidden text-sm font-normal text-muted-foreground sm:inline">Admin</span>
           </Link>
 
-          <nav className="hidden items-center gap-1 md:flex" aria-label="后台主导航">
+          <nav className="hidden items-center gap-1 md:flex" aria-label="Admin main navigation">
             {navItems.map((item) => {
               const isActive = pathname.startsWith(item.href);
               const Icon = item.icon;
@@ -68,11 +68,11 @@ export function AdminHeader({ user }: { user: UserResponse | null }) {
         <div className="flex items-center gap-3">
           <Link
             href="/"
-            aria-label="返回前台"
+            aria-label="Back to site"
             className="flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary/50 hover:text-foreground"
           >
             <ArrowLeft className="size-4" aria-hidden />
-            <span className="hidden sm:inline">返回前台</span>
+            <span className="hidden sm:inline">Back to site</span>
           </Link>
           {user && (
             <span className="hidden text-sm text-muted-foreground sm:inline">{user.fullName}</span>
