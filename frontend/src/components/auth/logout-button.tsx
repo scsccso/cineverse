@@ -27,7 +27,7 @@ export function LogoutButton({ className }: { className?: string }) {
       disabled={isLoggingOut}
       onClick={handleLogout}
     >
-      {isLoggingOut ? "退出中…" : "退出登录"}
+      {isLoggingOut ? "Logging out…" : "Log out"}
     </Button>
   );
 }

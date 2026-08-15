@@ -66,7 +66,7 @@ export default async function MovieDetailPage({
               {movie.contentRating && (
                 <Badge variant="outline">{movie.contentRating}</Badge>
               )}
-              <span className="font-mono">{movie.durationMinutes} 分钟</span>
+              <span className="font-mono">{movie.durationMinutes} min</span>
               {movie.userRating && (
                 <span className="flex items-center gap-1 text-primary">
                   <Star className="size-4 fill-primary" />
@@ -89,7 +89,7 @@ export default async function MovieDetailPage({
 
         <section className="mt-12">
           <h2 className="font-display text-2xl font-semibold tracking-tight">
-            选择场次
+            Showtimes
           </h2>
           <div className="mt-6">
             <ShowtimeList showtimes={showtimes} />

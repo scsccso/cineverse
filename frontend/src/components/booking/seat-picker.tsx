@@ -138,7 +138,7 @@ export function SeatPicker({
         }
       }
       if (removedLabels.length > 0) {
-        setNotice(`座位 ${removedLabels.join("、")} 刚被其他用户选走,已自动为你取消选中`);
+        setNotice(`Seats ${removedLabels.join(", ")} were just taken by another user and have been deselected for you`);
       }
       return stillAvailable.size === current.size ? current : stillAvailable;
     });
@@ -173,7 +173,7 @@ export function SeatPicker({
     if (selectedSeats.length === 0) return;
 
     if (status !== "authenticated") {
-      setErrorMessage("请先登录后再确认选座,即将跳转到登录页…");
+      setErrorMessage("Please log in to confirm your seats — redirecting to the login page…");
       setTimeout(() => {
         router.push(`/login?from=${encodeURIComponent(`/showtimes/${showtimeId}/seats`)}`);
       }, 900);
@@ -195,10 +195,10 @@ export function SeatPicker({
         // effect above) is more robust than depending on the exact wording
         // of a server error string, and it catches every taken seat, not
         // just the first one the backend happened to report.
-        setErrorMessage("提交失败:部分座位刚被其他用户抢先锁定,座位图已刷新,请重新选择");
+        setErrorMessage("Submission failed: some seats were just locked by another user. The seat map has been refreshed — please choose again");
         await refreshSeats();
       } else {
-        setErrorMessage("提交失败,请稍后重试");
+        setErrorMessage("Submission failed. Please try again later.");
       }
     } finally {
       setIsSubmitting(false);
@@ -243,7 +243,7 @@ export function SeatPicker({
       // BookingController.checkout / PaymentService).
       window.location.href = session.checkoutUrl;
     } catch {
-      setCheckoutError("发起支付失败,请稍后重试");
+      setCheckoutError("Failed to start checkout. Please try again later.");
       setIsCheckingOut(false);
     }
   }
@@ -285,12 +285,12 @@ export function SeatPicker({
           />
         ) : expired ? (
           <GlassCard className="mx-auto max-w-lg p-8 text-center">
-            <h2 className="font-display text-xl font-semibold">选座已过期</h2>
+            <h2 className="font-display text-xl font-semibold">Selection Expired</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              5 分钟持有时间已到,座位已释放给其他用户。请返回重新选座。
+              Your 5-minute hold has expired and the seats have been released to other users. Please go back and choose again.
             </p>
             <Button className="mt-6 h-11 w-full" onClick={handleReturnToSelection}>
-              返回重新选座
+              Choose Seats Again
             </Button>
           </GlassCard>
         ) : (
@@ -302,7 +302,7 @@ export function SeatPicker({
             <div className="mb-6 text-center">
               <p className="text-sm text-muted-foreground">{movieTitle}</p>
               <p className="mt-1 font-mono text-xs text-muted-foreground">
-                {showDate} · {showTime} · {hallLabel} · RM {pricePerSeat.toFixed(2)}/座
+                {showDate} · {showTime} · {hallLabel} · RM {pricePerSeat.toFixed(2)}/seat
               </p>
             </div>
 
@@ -352,7 +352,7 @@ function SelectionSummaryBar({
           runs the backend's two-layer concurrency check (DB pre-check, then
           the atomic Redis lock per seat — see CLAUDE.md Phase 5), so a 409
           losing the race is a normal, designed-for branch and the request is
-          not always instant; a button label swapping to "提交中…" was the
+          not always instant; a button label swapping to "Submitting…" was the
           weakest feedback in the app on its riskiest click. No `relative`
           needed on the parent: it is already `fixed`, which establishes the
           containing block this `absolute` bar positions against. */}
@@ -360,13 +360,13 @@ function SelectionSummaryBar({
       <div className="mx-auto flex max-w-5xl flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           {selectedSeats.length === 0 ? (
-            <p className="text-sm text-muted-foreground">请选择座位(可多选)</p>
+            <p className="text-sm text-muted-foreground">Select your seats (multiple allowed)</p>
           ) : (
             <>
               <p className="truncate text-sm text-foreground">
-                已选 {selectedSeats.length} 个座位:{" "}
+                {selectedSeats.length} seat{selectedSeats.length === 1 ? "" : "s"} selected:{" "}
                 <span className="font-mono text-muted-foreground">
-                  {selectedSeats.map(seatLabel).join("、")}
+                  {selectedSeats.map(seatLabel).join(", ")}
                 </span>
               </p>
               <p className="mt-0.5 font-mono text-lg font-semibold text-primary">
@@ -381,7 +381,7 @@ function SelectionSummaryBar({
           disabled={selectedSeats.length === 0 || isSubmitting || disabled}
           onClick={onConfirm}
         >
-          {isSubmitting ? "提交中…" : "确认选座"}
+          {isSubmitting ? "Submitting…" : "Confirm Seats"}
         </Button>
       </div>
     </div>

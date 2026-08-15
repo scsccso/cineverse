@@ -48,9 +48,9 @@ export function LoginForm({ redirectTo = "/profile" }: LoginFormProps) {
       // deliberately returns the same generic message for both so this UI
       // never leaks which one it was (anti user-enumeration).
       if (error instanceof ApiError && error.status === 401) {
-        setFormError("邮箱或密码错误");
+        setFormError("Incorrect email or password");
       } else {
-        setFormError("登录失败,请稍后重试");
+        setFormError("Login failed. Please try again later.");
       }
     }
   }
@@ -62,7 +62,7 @@ export function LoginForm({ redirectTo = "/profile" }: LoginFormProps) {
         <AnimatedFormBanner message={formError} />
 
         <Field data-invalid={!!errors.email || undefined}>
-          <FieldLabel htmlFor="email">邮箱</FieldLabel>
+          <FieldLabel htmlFor="email">Email</FieldLabel>
           <Input
             id="email"
             type="email"
@@ -75,7 +75,7 @@ export function LoginForm({ redirectTo = "/profile" }: LoginFormProps) {
         </Field>
 
         <Field data-invalid={!!errors.password || undefined}>
-          <FieldLabel htmlFor="password">密码</FieldLabel>
+          <FieldLabel htmlFor="password">Password</FieldLabel>
           <Input
             id="password"
             type="password"
@@ -87,7 +87,7 @@ export function LoginForm({ redirectTo = "/profile" }: LoginFormProps) {
         </Field>
 
         <Button type="submit" disabled={isSubmitting} className="h-11 text-base">
-          {isSubmitting ? "登录中…" : "登录"}
+          {isSubmitting ? "Logging in…" : "Log in"}
         </Button>
       </FieldGroup>
     </form>

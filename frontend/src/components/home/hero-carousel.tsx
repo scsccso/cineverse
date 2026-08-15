@@ -95,7 +95,7 @@ export function HeroCarousel({ movies }: { movies: MovieResponse[] }) {
               href={`/movies/${movie.id}`}
               className={cn(buttonVariants({ size: "lg" }), "mt-8 h-12 px-8")}
             >
-              立即购票
+              Book Now
             </Link>
           </div>
         </div>
@@ -110,7 +110,7 @@ export function HeroCarousel({ movies }: { movies: MovieResponse[] }) {
               <button
                 key={candidate.id}
                 type="button"
-                aria-label={`第 ${i + 1} 部影片`}
+                aria-label={`Go to movie ${i + 1}`}
                 aria-current={i === index}
                 onClick={() => goTo(i)}
                 className="flex h-11 w-11 items-center justify-center"
@@ -142,7 +142,7 @@ function CarouselArrow({
     <button
       type="button"
       onClick={onClick}
-      aria-label={direction === "prev" ? "上一部" : "下一部"}
+      aria-label={direction === "prev" ? "Previous movie" : "Next movie"}
       className={cn(
         // Hidden below sm — the text block now sits directly on the image
         // with no card padding cushioning it (see the de-cardify note

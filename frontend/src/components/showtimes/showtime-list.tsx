@@ -6,7 +6,7 @@ import type { ShowtimeResponse } from "@/lib/api/types";
 export function ShowtimeList({ showtimes }: { showtimes: ShowtimeResponse[] }) {
   if (showtimes.length === 0) {
     return (
-      <p className="text-muted-foreground">暂无可选场次,请稍后再来看看。</p>
+      <p className="text-muted-foreground">No showtimes available right now — please check back later.</p>
     );
   }
 

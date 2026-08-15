@@ -13,12 +13,12 @@ export default function CustomerNotFound() {
   return (
     <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-lg flex-col justify-center px-6 py-16">
       <GlassCard className="p-8 text-center">
-        <h1 className="font-display text-xl font-semibold">页面不存在</h1>
+        <h1 className="font-display text-xl font-semibold">Page not found</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          你要找的页面可能已经下架,或者链接有误。
+          The page you&apos;re looking for may have been removed, or the link might be incorrect.
         </p>
         <Link href="/" className={cn(buttonVariants(), "mt-6 h-11 w-full")}>
-          返回首页
+          Back to home
         </Link>
       </GlassCard>
     </section>

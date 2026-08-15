@@ -73,7 +73,7 @@ export default function BookingConfirmedPage() {
   if (status === "loading" || phase === "waiting") {
     return (
       <section className="mx-auto flex min-h-[60vh] max-w-lg flex-col items-center justify-center px-6 text-center">
-        <p className="text-sm text-muted-foreground">正在确认支付结果…</p>
+        <p className="text-sm text-muted-foreground">Confirming your payment…</p>
       </section>
     );
   }
@@ -81,7 +81,7 @@ export default function BookingConfirmedPage() {
   if (status === "unauthenticated") {
     return (
       <section className="mx-auto max-w-lg px-6 py-16 text-center text-muted-foreground">
-        请登录后查看订单状态。
+        Please log in to view your booking status.
       </section>
     );
   }
@@ -90,12 +90,12 @@ export default function BookingConfirmedPage() {
     return (
       <section className="mx-auto max-w-lg px-6 py-16">
         <GlassCard className="p-8 text-center">
-          <h1 className="font-display text-xl font-semibold">支付结果确认中</h1>
+          <h1 className="font-display text-xl font-semibold">Confirming Payment</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            支付可能仍在处理,请稍后刷新此页面查看最新状态。
+            Your payment may still be processing. Please refresh this page in a moment to see the latest status.
           </p>
           <Button className="mt-6 h-11 w-full" onClick={() => window.location.reload()}>
-            刷新
+            Refresh
           </Button>
         </GlassCard>
       </section>
@@ -106,15 +106,15 @@ export default function BookingConfirmedPage() {
     return (
       <section className="mx-auto max-w-lg px-6 py-16">
         <GlassCard className="p-8 text-center">
-          <h1 className="font-display text-xl font-semibold">支付未完成</h1>
+          <h1 className="font-display text-xl font-semibold">Payment Not Completed</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            这笔订单没能在有效时间内完成支付,座位已释放。
+            This booking wasn&apos;t paid within the time limit, so the seats have been released.
           </p>
           <Link
             href={`/showtimes/${booking.showtime.id}/seats`}
             className={cn(buttonVariants(), "mt-6 h-11 w-full")}
           >
-            返回重新选座
+            Choose Seats Again
           </Link>
         </GlassCard>
       </section>
@@ -129,7 +129,7 @@ export default function BookingConfirmedPage() {
     <section className="mx-auto max-w-lg px-6 py-16">
       <FadeIn>
         <GlassCard className="p-8">
-          <p className="text-sm text-primary">支付成功,订单已确认</p>
+          <p className="text-sm text-primary">Payment successful — your booking is confirmed</p>
           <h1 className="mt-1 font-display text-2xl font-semibold tracking-tight">
             {booking.showtime.movieTitle}
           </h1>
@@ -142,14 +142,14 @@ export default function BookingConfirmedPage() {
             {booking.seats.map((seat) => (
               <div key={seat.seatId} className="flex items-center justify-between">
                 <dt className="text-muted-foreground">
-                  {seat.rowLabel}
-                  {seat.columnNumber} 号座 · {seat.seatType === "COUPLE" ? "情侣座" : "标准座"}
+                  Seat {seat.rowLabel}
+                  {seat.columnNumber} · {seat.seatType === "COUPLE" ? "Couple Seat" : "Standard Seat"}
                 </dt>
                 <dd className="font-mono">RM {seat.priceAtBooking.toFixed(2)}</dd>
               </div>
             ))}
             <div className="flex items-center justify-between border-t border-glass-border/60 pt-2 font-medium">
-              <dt>总计</dt>
+              <dt>Total</dt>
               <dd className="font-mono text-primary">RM {booking.totalPrice.toFixed(2)}</dd>
             </div>
           </dl>
@@ -158,10 +158,10 @@ export default function BookingConfirmedPage() {
             <div className="mt-6 flex flex-col items-center border-t border-glass-border/60 pt-6">
               {booking.redeemedAt ? (
                 <p className="mb-3 rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-primary">
-                  已入场 · {new Date(booking.redeemedAt).toLocaleString("zh-CN")}
+                  Redeemed · {new Date(booking.redeemedAt).toLocaleString("en-GB")}
                 </p>
               ) : (
-                <p className="mb-3 text-xs text-muted-foreground">入场时向工作人员出示此电子票</p>
+                <p className="mb-3 text-xs text-muted-foreground">Show this e-ticket to staff at the entrance</p>
               )}
               {/* White backing regardless of theme — QR scanners need strong
                   contrast, which the dark Liquid Glass surface can't provide
@@ -177,7 +177,7 @@ export default function BookingConfirmedPage() {
               promise "your account" and land on a page with no trace of the
               ticket just purchased — the one dead end in the whole flow. */}
           <Link href="/bookings" className={cn(buttonVariants(), "mt-6 h-11 w-full")}>
-            查看我的订单
+            View My Bookings
           </Link>
         </GlassCard>
       </FadeIn>
