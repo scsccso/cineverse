@@ -1,22 +1,22 @@
 import { z } from "zod";
 
 export const loginSchema = z.object({
-  email: z.email({ message: "请输入有效的邮箱地址" }),
-  password: z.string().min(1, { message: "请输入密码" }),
+  email: z.email({ message: "Please enter a valid email address" }),
+  password: z.string().min(1, { message: "Please enter your password" }),
 });
 
 export type LoginFormValues = z.infer<typeof loginSchema>;
 
 export const registerSchema = z.object({
-  email: z.email({ message: "请输入有效的邮箱地址" }),
+  email: z.email({ message: "Please enter a valid email address" }),
   password: z
     .string()
-    .min(8, { message: "密码至少需要 8 个字符" })
-    .max(100, { message: "密码最多 100 个字符" }),
+    .min(8, { message: "Password must be at least 8 characters" })
+    .max(100, { message: "Password must be at most 100 characters" }),
   fullName: z
     .string()
-    .min(1, { message: "请输入姓名" })
-    .max(255, { message: "姓名最多 255 个字符" }),
+    .min(1, { message: "Please enter your full name" })
+    .max(255, { message: "Full name must be at most 255 characters" }),
 });
 
 export type RegisterFormValues = z.infer<typeof registerSchema>;

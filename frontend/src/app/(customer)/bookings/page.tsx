@@ -57,7 +57,7 @@ export default function BookingsPage() {
         setLoadError(null);
       })
       .catch(() => {
-        if (!ignore) setLoadError("加载订单失败,请稍后重试");
+        if (!ignore) setLoadError("Failed to load your bookings — please try again later");
       });
 
     return () => {
@@ -67,9 +67,9 @@ export default function BookingsPage() {
 
   return (
     <section className="mx-auto max-w-2xl px-6 py-16">
-      <h1 className="font-display text-2xl font-semibold tracking-tight">我的订单</h1>
+      <h1 className="font-display text-2xl font-semibold tracking-tight">My Bookings</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        购票记录与电子票。已确认的订单点进去就是入场二维码。
+        Your booking history and e-tickets. Tap a confirmed booking to view its entry QR code.
       </p>
 
       <div className="mt-8">
@@ -100,13 +100,13 @@ function EmptyState() {
     <GlassCard className="flex flex-col items-center gap-4 p-10 text-center">
       <Ticket className="size-10 text-muted-foreground" aria-hidden />
       <div>
-        <p className="font-medium">你还没有任何订单</p>
+        <p className="font-medium">You don&apos;t have any bookings yet</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          选一场电影,选好座位并完成支付后,电子票会出现在这里。
+          Pick a movie, choose your seats, and complete payment — your e-ticket will show up here.
         </p>
       </div>
       <Link href="/#now-playing" className={cn(buttonVariants(), "h-11 px-6")}>
-        去看看正在热映
+        Browse Now Playing
       </Link>
     </GlassCard>
   );
@@ -115,7 +115,7 @@ function EmptyState() {
 function BookingRow({ booking }: { booking: BookingResponse }) {
   const seatLabels = booking.seats
     .map((seat) => `${seat.rowLabel}${seat.columnNumber}`)
-    .join("、");
+    .join(", ");
 
   return (
     <Link href={`/bookings/${booking.id}/confirmed`} className="block">
@@ -135,7 +135,7 @@ function BookingRow({ booking }: { booking: BookingResponse }) {
 
         <div className="mt-4 flex items-end justify-between gap-4 border-t border-glass-border/60 pt-3">
           <p className="min-w-0 text-sm text-muted-foreground">
-            座位 <span className="font-mono text-foreground">{seatLabels}</span>
+            Seats <span className="font-mono text-foreground">{seatLabels}</span>
           </p>
           <p className="shrink-0 font-mono text-base font-semibold text-primary">
             RM {booking.totalPrice.toFixed(2)}
@@ -148,8 +148,8 @@ function BookingRow({ booking }: { booking: BookingResponse }) {
 
 /**
  * Status is encoded three ways — icon shape, wording, and colour — so it never
- * depends on colour alone (CLAUDE.md 1.5). "已入场" takes precedence over
- * "已确认" because a redeemed ticket can't be used again, which is the more
+ * depends on colour alone (CLAUDE.md 1.5). "Redeemed" takes precedence over
+ * "Confirmed" because a redeemed ticket can't be used again, which is the more
  * useful thing to know at a glance.
  */
 function StatusTag({ status, redeemed }: { status: BookingStatus; redeemed: boolean }) {
@@ -171,25 +171,25 @@ function statusPresentation(status: BookingStatus, redeemed: boolean) {
   if (status === "CONFIRMED" && redeemed) {
     return {
       Icon: CheckCircle2,
-      label: "已入场",
+      label: "Redeemed",
       tone: "border-muted-foreground/30 bg-muted/20 text-muted-foreground",
     };
   }
   switch (status) {
     case "CONFIRMED":
-      return { Icon: CheckCircle2, label: "已确认", tone: "border-primary/50 bg-primary/15 text-primary" };
+      return { Icon: CheckCircle2, label: "Confirmed", tone: "border-primary/50 bg-primary/15 text-primary" };
     case "PENDING":
-      return { Icon: Clock, label: "待支付", tone: "border-primary/40 bg-primary/10 text-primary/90" };
+      return { Icon: Clock, label: "Pending Payment", tone: "border-primary/40 bg-primary/10 text-primary/90" };
     case "EXPIRED":
       return {
         Icon: CalendarX2,
-        label: "已过期",
+        label: "Expired",
         tone: "border-muted-foreground/30 bg-muted/20 text-muted-foreground",
       };
     case "CANCELLED":
       return {
         Icon: XCircle,
-        label: "已取消",
+        label: "Cancelled",
         tone: "border-muted-foreground/30 bg-muted/20 text-muted-foreground",
       };
   }

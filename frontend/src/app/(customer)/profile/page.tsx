@@ -26,7 +26,7 @@ function initials(fullName: string) {
 
 function formatJoinedDate(iso: string | null) {
   if (!iso) return "—";
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat("en-GB", {
     year: "numeric",
     month: "long",
     day: "numeric",
@@ -95,7 +95,7 @@ export default function ProfilePage() {
           router.replace("/login");
           return;
         }
-        setLoadError("加载个人信息失败,请稍后重试");
+        setLoadError("Failed to load your profile — please try again later");
       });
 
     return () => {
@@ -145,15 +145,15 @@ export default function ProfilePage() {
           <CardContent>
             <Separator className="mb-4" />
             <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
-              <dt className="text-muted-foreground">用户 ID</dt>
+              <dt className="text-muted-foreground">User ID</dt>
               <dd className="truncate font-mono text-xs">{profile.id}</dd>
-              <dt className="text-muted-foreground">加入时间</dt>
+              <dt className="text-muted-foreground">Joined</dt>
               <dd>{formatJoinedDate(profile.createdAt)}</dd>
             </dl>
 
             <div className="mt-8 flex items-center justify-between gap-4">
               <Link href="/bookings" className={cn(buttonVariants(), "h-11 px-6")}>
-                我的订单
+                My Bookings
               </Link>
               <LogoutButton />
             </div>

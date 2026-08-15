@@ -87,7 +87,7 @@ export function SeatMap({
  * soft glow standing in for the old flat gradient bar (see
  * docs/design-proposal-customer-editorial.md, section 2.1). Doesn't read
  * any seat data and carries no state; the accessible label is still the
- * plain-text "银幕 · {hallName}" line below it, same as before. `aria-hidden`
+ * plain-text "Screen · {hallName}" line below it, same as before. `aria-hidden`
  * on the SVG (and the all-caps "SCREEN" glyph next to it) keeps screen
  * readers from getting two competing announcements of the same fact.
  */
@@ -127,7 +127,7 @@ function ScreenIndicator({ hallName }: { hallName: string }) {
         SCREEN
       </p>
       <p className="mt-1 text-center text-xs tracking-[0.3em] text-muted-foreground">
-        银幕 · {hallName}
+        Screen · {hallName}
       </p>
     </div>
   );
@@ -185,23 +185,23 @@ function SeatButton({
 /**
  * The swatches mirror both halves of each seat's encoding, border *and* icon
  * (CLAUDE.md 1.5). They previously carried the border only — so the one cue
- * that actually separates 使用中 from 已售出 for a colour-blind reader, the
- * lock vs. the tick, was visible on the grid but missing from the key meant to
- * decode it. 可选/已选 have no icon on the real seats either (they show the
+ * that actually separates Temporarily Locked from Booked for a colour-blind
+ * reader, the lock vs. the tick, was visible on the grid but missing from the
+ * key meant to decode it. Available/Selected have no icon on the real seats either (they show the
  * seat number), so they correctly have none here.
  */
 function SeatLegend() {
   const items: { label: string; swatch: string; Icon?: LucideIcon; iconClass?: string }[] = [
-    { label: "可选", swatch: "border border-glass-border bg-glass-surface" },
-    { label: "已选", swatch: "border border-primary bg-primary/15" },
+    { label: "Available", swatch: "border border-glass-border bg-glass-surface" },
+    { label: "Selected", swatch: "border border-primary bg-primary/15" },
     {
-      label: "使用中(暂时锁定)",
+      label: "Temporarily Locked",
       swatch: "border border-dashed border-muted-foreground/30 bg-muted/20",
       Icon: Lock,
       iconClass: "text-muted-foreground/70",
     },
     {
-      label: "已售出",
+      label: "Booked",
       swatch: "border border-transparent bg-muted-foreground/25",
       Icon: Check,
       iconClass: "text-background/70",
@@ -223,23 +223,23 @@ function SeatLegend() {
       ))}
       <div className="flex items-center gap-1.5">
         <Heart className="size-3 fill-current text-muted-foreground" aria-hidden />
-        情侣座
+        Couple Seat
       </div>
     </div>
   );
 }
 
 function ariaLabel(seat: SeatStatusEntry, selected: boolean): string {
-  const typeLabel = seat.seatType === "COUPLE" ? "情侣座" : "标准座";
+  const typeLabel = seat.seatType === "COUPLE" ? "Couple Seat" : "Standard Seat";
   const statusLabel =
     seat.status === "BOOKED"
-      ? "已售出"
+      ? "Booked"
       : seat.status === "LOCKED"
-        ? "暂时锁定,不可选"
+        ? "Temporarily locked, not selectable"
         : selected
-          ? "已选中"
-          : "可选";
-  return `${seat.rowLabel}排${seat.columnNumber}号 ${typeLabel} ${statusLabel}`;
+          ? "Selected"
+          : "Available";
+  return `Row ${seat.rowLabel}, Seat ${seat.columnNumber}, ${typeLabel}, ${statusLabel}`;
 }
 
 /** Preserves the backend's row-then-column ordering — no re-sort needed. */

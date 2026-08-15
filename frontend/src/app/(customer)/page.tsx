@@ -15,15 +15,15 @@ export default async function Home() {
       <div className="mx-auto max-w-6xl space-y-16 px-6 py-16">
         <MovieSection
           id="now-playing"
-          title="正在热映"
+          title="Now Playing"
           movies={nowPlaying.content}
-          emptyLabel="暂无正在热映的影片"
+          emptyLabel="No movies currently playing"
         />
         <MovieSection
           id="coming-soon"
-          title="即将上映"
+          title="Coming Soon"
           movies={comingSoon.content}
-          emptyLabel="暂无即将上映的影片"
+          emptyLabel="No upcoming movies yet"
         />
       </div>
     </>

@@ -49,24 +49,24 @@ export default async function ShowtimeConfirmPage({
 
       <div className="relative z-10 mx-auto w-full max-w-lg px-6 py-16">
         <GlassCard className="p-8">
-          <p className="text-sm text-muted-foreground">场次确认</p>
+          <p className="text-sm text-muted-foreground">Showtime Confirmation</p>
           <h1 className="mt-2 font-display text-2xl font-semibold tracking-tight">
             {showtime.movie.title}
           </h1>
           <dl className="mt-6 space-y-3 text-sm">
-            <Row label="日期" value={formatShowDate(showtime.startTime)} />
-            <Row label="时间" value={formatShowTime(showtime.startTime)} />
+            <Row label="Date" value={formatShowDate(showtime.startTime)} />
+            <Row label="Time" value={formatShowTime(showtime.startTime)} />
             <Row
-              label="影厅"
+              label="Hall"
               value={`${showtime.hall.name} · ${showtime.hall.cinemaName}`}
             />
-            <Row label="票价" value={`RM ${showtime.price.toFixed(2)}`} />
+            <Row label="Price" value={`RM ${showtime.price.toFixed(2)}`} />
           </dl>
           <Link
             href={`/showtimes/${showtime.id}/seats`}
             className={cn(buttonVariants({ size: "lg" }), "mt-8 h-12 w-full")}
           >
-            继续选座
+            Continue to Seats
           </Link>
         </GlassCard>
       </div>

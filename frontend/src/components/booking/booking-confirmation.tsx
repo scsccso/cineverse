@@ -79,7 +79,7 @@ export function BookingConfirmation({
    */
   const deadlineLabel = useMemo(
     () =>
-      new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })
+      new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })
         .format(new Date(expiresAtMs)),
     [expiresAtMs],
   );
@@ -105,14 +105,14 @@ export function BookingConfirmation({
       <div className="absolute inset-0 bg-gradient-to-t from-background via-background/85 to-background/45" />
 
       <GlassCard className="relative z-10 max-w-lg p-8">
-        {/* "去支付" fires a real network call (POST /bookings/{id}/checkout
+        {/* "Pay Now" fires a real network call (POST /bookings/{id}/checkout
             creates the Stripe session) before the redirect, so there is a
             latency window where only the button label had changed. Sits
             inside GlassCard's own inner `relative` wrapper, which insets it
             by the card padding — the same treatment the login/register bars
             get inside their Card, so the two read as one pattern. */}
         <SubmitProgressBar active={isCheckingOut} />
-        <p className="text-sm text-muted-foreground">选座成功,请在时间内完成支付</p>
+        <p className="text-sm text-muted-foreground">Seats reserved — complete payment before time runs out</p>
         <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight">{movieTitle}</h2>
 
         <div className="mt-6">
@@ -126,7 +126,7 @@ export function BookingConfirmation({
             {formatCountdown(remainingMs)}
           </p>
           <p className="text-center text-xs text-muted-foreground">
-            请在 <span className="font-mono text-foreground">{deadlineLabel}</span> 前完成支付,否则座位将自动释放
+            Complete payment by <span className="font-mono text-foreground">{deadlineLabel}</span>, or your seats will be released automatically
           </p>
         </div>
 
@@ -134,14 +134,14 @@ export function BookingConfirmation({
           {booking.seats.map((seat) => (
             <div key={seat.seatId} className="flex items-center justify-between">
               <dt className="text-muted-foreground">
-                {seat.rowLabel}
-                {seat.columnNumber} 号座 · {seat.seatType === "COUPLE" ? "情侣座" : "标准座"}
+                Seat {seat.rowLabel}
+                {seat.columnNumber} · {seat.seatType === "COUPLE" ? "Couple Seat" : "Standard Seat"}
               </dt>
               <dd className="font-mono">RM {seat.priceAtBooking.toFixed(2)}</dd>
             </div>
           ))}
           <div className="flex items-center justify-between border-t border-glass-border/60 pt-2 font-medium">
-            <dt>总计</dt>
+            <dt>Total</dt>
             <dd className="font-mono text-primary">RM {booking.totalPrice.toFixed(2)}</dd>
           </div>
         </dl>
@@ -158,15 +158,15 @@ export function BookingConfirmation({
             ORPHANED_SUCCESS case. Stating the absolute time here means they
             leave with something they can check against their phone clock. */}
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          支付页面由 Stripe 托管,期间倒计时不会暂停——请在{" "}
-          <span className="font-mono text-foreground">{deadlineLabel}</span> 前完成
+          The payment page is hosted by Stripe — the countdown keeps running while you&apos;re there. Complete payment by{" "}
+          <span className="font-mono text-foreground">{deadlineLabel}</span>
         </p>
         <Button
           className="mt-2 h-11 w-full"
           disabled={isCheckingOut || isCancelling}
           onClick={onCheckout}
         >
-          {isCheckingOut ? "正在跳转到支付页面…" : "去支付"}
+          {isCheckingOut ? "Redirecting to payment…" : "Pay Now"}
         </Button>
         <Button
           variant="outline"
@@ -174,7 +174,7 @@ export function BookingConfirmation({
           disabled={isCancelling || isCheckingOut}
           onClick={onCancel}
         >
-          {isCancelling ? "取消中…" : "取消选座"}
+          {isCancelling ? "Cancelling…" : "Cancel Selection"}
         </Button>
       </GlassCard>
     </div>

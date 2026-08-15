@@ -37,9 +37,9 @@ export function RegisterForm() {
       setRegisteredEmail(user.email);
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
-        setFormError("该邮箱已被注册");
+        setFormError("This email is already registered");
       } else {
-        setFormError("注册失败,请稍后重试");
+        setFormError("Sign up failed. Please try again later.");
       }
     }
   }
@@ -49,13 +49,13 @@ export function RegisterForm() {
       <FadeIn y={8} duration={0.3} className="flex flex-col items-center gap-4 py-4 text-center">
         <CircleCheck className="size-10 text-primary" />
         <div>
-          <p className="font-medium">注册成功</p>
+          <p className="font-medium">Account created</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            {registeredEmail} 已开通,现在可以登录了。
+            {registeredEmail} is ready — you can log in now.
           </p>
         </div>
         <Link href="/login" className={cn(buttonVariants(), "h-11 w-full text-base")}>
-          前往登录
+          Log In
         </Link>
       </FadeIn>
     );
@@ -68,7 +68,7 @@ export function RegisterForm() {
         <AnimatedFormBanner message={formError} />
 
         <Field data-invalid={!!errors.fullName || undefined}>
-          <FieldLabel htmlFor="fullName">姓名</FieldLabel>
+          <FieldLabel htmlFor="fullName">Full Name</FieldLabel>
           <Input
             id="fullName"
             type="text"
@@ -81,7 +81,7 @@ export function RegisterForm() {
         </Field>
 
         <Field data-invalid={!!errors.email || undefined}>
-          <FieldLabel htmlFor="email">邮箱</FieldLabel>
+          <FieldLabel htmlFor="email">Email</FieldLabel>
           <Input
             id="email"
             type="email"
@@ -94,7 +94,7 @@ export function RegisterForm() {
         </Field>
 
         <Field data-invalid={!!errors.password || undefined}>
-          <FieldLabel htmlFor="password">密码</FieldLabel>
+          <FieldLabel htmlFor="password">Password</FieldLabel>
           <Input
             id="password"
             type="password"
@@ -106,7 +106,7 @@ export function RegisterForm() {
         </Field>
 
         <Button type="submit" disabled={isSubmitting} className="h-11 text-base">
-          {isSubmitting ? "注册中…" : "创建账号"}
+          {isSubmitting ? "Signing up…" : "Create Account"}
         </Button>
       </FieldGroup>
     </form>
