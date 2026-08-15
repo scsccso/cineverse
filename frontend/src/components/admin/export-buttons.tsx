@@ -40,7 +40,7 @@ export function ExportButtons({ onExport }: ExportButtonsProps) {
         ) : (
           <Download className="size-3.5" aria-hidden data-icon="inline-start" />
         )}
-        导出 CSV
+        Export CSV
       </Button>
       <Button
         type="button"
@@ -54,11 +54,11 @@ export function ExportButtons({ onExport }: ExportButtonsProps) {
         ) : (
           <Download className="size-3.5" aria-hidden data-icon="inline-start" />
         )}
-        导出 PDF
+        Export PDF
       </Button>
       {error && (
         <span role="alert" className="text-xs text-destructive">
-          导出失败,请重试
+          Export failed. Please try again.
         </span>
       )}
     </div>

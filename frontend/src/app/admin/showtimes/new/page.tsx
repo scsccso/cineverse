@@ -52,25 +52,25 @@ export default function NewShowtimePage() {
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-4" aria-hidden />
-        返回场次列表
+        Back to Showtimes
       </Link>
 
       <header className="mb-6">
-        <h1 className="font-heading text-2xl font-semibold text-foreground">新增场次</h1>
+        <h1 className="font-heading text-2xl font-semibold text-foreground">Add Showtime</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          没有编辑功能——排期填错了删除重建,和后端接口的设计一致。
+          No editing — if a showtime is entered wrong, delete it and create a new one, matching the backend API&apos;s design.
         </p>
       </header>
 
       <Card className="shadow-sm">
         <CardHeader>
-          <CardTitle>场次信息</CardTitle>
+          <CardTitle>Showtime Info</CardTitle>
         </CardHeader>
         <CardContent>
           {loadError ? (
-            <p className="py-8 text-center text-sm text-destructive">电影/影厅列表加载失败,请刷新重试</p>
+            <p className="py-8 text-center text-sm text-destructive">Failed to load movies/halls. Please refresh and try again.</p>
           ) : !movies || !halls ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">加载中...</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">Loading...</p>
           ) : (
             <ShowtimeForm
               movies={movies}

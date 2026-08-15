@@ -15,9 +15,9 @@ import { AnimatedFormBanner } from "@/components/motion/animated-form-banner";
 import { SubmitProgressBar } from "@/components/motion/submit-progress-bar";
 
 const STATUS_OPTIONS: { value: MovieStatus; label: string }[] = [
-  { value: "COMING_SOON", label: "即将上映" },
-  { value: "NOW_PLAYING", label: "正在热映" },
-  { value: "ENDED", label: "已下映" },
+  { value: "COMING_SOON", label: "Coming Soon" },
+  { value: "NOW_PLAYING", label: "Now Playing" },
+  { value: "ENDED", label: "Ended" },
 ];
 
 /** initialMovie (edit) and tmdbPrefill (create, TMDB-picked) are mutually
@@ -126,7 +126,7 @@ export function MovieForm({
       // Shown as-is, not re-worded — GlobalExceptionHandler's messages
       // (e.g. the 409 duplicate/validation cases) are already written to be
       // read by whoever is looking at the response, admin included.
-      setFormError(error instanceof ApiError ? error.message : "保存失败,请稍后重试");
+      setFormError(error instanceof ApiError ? error.message : "Failed to save. Please try again later.");
     }
   }
 
@@ -137,19 +137,19 @@ export function MovieForm({
         <AnimatedFormBanner message={formError} />
 
         <Field data-invalid={!!errors.title || undefined}>
-          <FieldLabel htmlFor="title">片名</FieldLabel>
+          <FieldLabel htmlFor="title">Title</FieldLabel>
           <Input id="title" aria-invalid={!!errors.title} {...register("title")} />
           <AnimatedFieldError message={errors.title?.message} />
         </Field>
 
         <Field data-invalid={!!errors.tagline || undefined}>
-          <FieldLabel htmlFor="tagline">宣传语</FieldLabel>
-          <Input id="tagline" placeholder="一句话文案(选填)" aria-invalid={!!errors.tagline} {...register("tagline")} />
+          <FieldLabel htmlFor="tagline">Tagline</FieldLabel>
+          <Input id="tagline" placeholder="One-line tagline (optional)" aria-invalid={!!errors.tagline} {...register("tagline")} />
           <AnimatedFieldError message={errors.tagline?.message} />
         </Field>
 
         <Field>
-          <FieldLabel htmlFor="description">简介</FieldLabel>
+          <FieldLabel htmlFor="description">Description</FieldLabel>
           <textarea
             id="description"
             rows={4}
@@ -160,7 +160,7 @@ export function MovieForm({
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field data-invalid={!!errors.durationMinutes || undefined}>
-            <FieldLabel htmlFor="durationMinutes">时长(分钟)</FieldLabel>
+            <FieldLabel htmlFor="durationMinutes">Duration (minutes)</FieldLabel>
             <Input
               id="durationMinutes"
               type="number"
@@ -173,7 +173,7 @@ export function MovieForm({
           </Field>
 
           <Field data-invalid={!!errors.contentRating || undefined}>
-            <FieldLabel htmlFor="contentRating">分级</FieldLabel>
+            <FieldLabel htmlFor="contentRating">Content Rating</FieldLabel>
             <Input id="contentRating" placeholder="PG-13" aria-invalid={!!errors.contentRating} {...register("contentRating")} />
             <AnimatedFieldError message={errors.contentRating?.message} />
           </Field>
@@ -181,7 +181,7 @@ export function MovieForm({
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field data-invalid={!!errors.userRating || undefined}>
-            <FieldLabel htmlFor="userRating">评分(0~10,选填)</FieldLabel>
+            <FieldLabel htmlFor="userRating">Rating (0–10, optional)</FieldLabel>
             <Input
               id="userRating"
               type="number"
@@ -196,7 +196,7 @@ export function MovieForm({
           </Field>
 
           <Field>
-            <FieldLabel htmlFor="status">状态</FieldLabel>
+            <FieldLabel htmlFor="status">Status</FieldLabel>
             <select
               id="status"
               className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -209,19 +209,19 @@ export function MovieForm({
               ))}
             </select>
             {!initialMovie && (
-              <FieldDescription>新建电影默认「即将上映」,确认信息无误后再手动切换为「正在热映」。</FieldDescription>
+              <FieldDescription>New movies default to &quot;Coming Soon&quot; — switch to &quot;Now Playing&quot; manually once everything checks out.</FieldDescription>
             )}
           </Field>
         </div>
 
         <Field data-invalid={!!errors.trailerUrl || undefined}>
-          <FieldLabel htmlFor="trailerUrl">预告片链接</FieldLabel>
+          <FieldLabel htmlFor="trailerUrl">Trailer URL</FieldLabel>
           <Input id="trailerUrl" placeholder="https://..." aria-invalid={!!errors.trailerUrl} {...register("trailerUrl")} />
           <AnimatedFieldError message={errors.trailerUrl?.message} />
         </Field>
 
         <Field>
-          <FieldLabel id="genres-label">分类(可多选,选填)</FieldLabel>
+          <FieldLabel id="genres-label">Genres (multi-select, optional)</FieldLabel>
           <div className="flex flex-wrap gap-2" role="group" aria-labelledby="genres-label">
             {genres.map((genre) => {
               const selected = genreIds.includes(genre.id);

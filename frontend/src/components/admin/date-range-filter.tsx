@@ -8,9 +8,9 @@ import { Label } from "@/components/ui/label";
 import { resolvePreset, type DateRange, type DateRangePreset } from "@/lib/admin/date-range";
 
 const PRESET_OPTIONS: { value: Exclude<DateRangePreset, "custom">; label: string }[] = [
-  { value: "today", label: "今日" },
-  { value: "7d", label: "近 7 天" },
-  { value: "30d", label: "近 30 天" },
+  { value: "today", label: "Today" },
+  { value: "7d", label: "Last 7 Days" },
+  { value: "30d", label: "Last 30 Days" },
 ];
 
 export interface DateRangeFilterValue extends DateRange {
@@ -43,7 +43,7 @@ export function DateRangeFilter({ value, onChange }: DateRangeFilterProps) {
 
   return (
     <div className="flex flex-wrap items-end gap-3">
-      <div className="flex flex-wrap gap-2" role="group" aria-label="预设时间范围">
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Preset date range">
         {PRESET_OPTIONS.map((option) => (
           <PresetButton
             key={option.value}
@@ -52,13 +52,13 @@ export function DateRangeFilter({ value, onChange }: DateRangeFilterProps) {
             onClick={() => selectPreset(option.value)}
           />
         ))}
-        <PresetButton label="自定义" selected={value.preset === "custom"} onClick={switchToCustom} />
+        <PresetButton label="Custom" selected={value.preset === "custom"} onClick={switchToCustom} />
       </div>
 
       {value.preset === "custom" && (
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
-            <Label htmlFor={fromId}>起始日期</Label>
+            <Label htmlFor={fromId}>Start Date</Label>
             <Input
               id={fromId}
               type="date"
@@ -68,7 +68,7 @@ export function DateRangeFilter({ value, onChange }: DateRangeFilterProps) {
             />
           </div>
           <div className="flex flex-col gap-1">
-            <Label htmlFor={toId}>结束日期</Label>
+            <Label htmlFor={toId}>End Date</Label>
             <Input
               id={toId}
               type="date"

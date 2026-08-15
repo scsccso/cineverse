@@ -70,9 +70,9 @@ export default function EditMoviePage() {
   if (loadError) {
     return (
       <section className="mx-auto max-w-2xl px-6 py-10">
-        <p className="py-8 text-center text-sm text-destructive">电影加载失败,可能已被删除</p>
+        <p className="py-8 text-center text-sm text-destructive">Failed to load movie — it may have been deleted</p>
         <Link href="/admin/movies" className="mx-auto block w-fit text-sm text-muted-foreground hover:text-foreground">
-          返回电影列表
+          Back to Movies
         </Link>
       </section>
     );
@@ -82,18 +82,18 @@ export default function EditMoviePage() {
     <section className="mx-auto max-w-2xl px-6 py-10">
       <Link href="/admin/movies" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" aria-hidden />
-        返回电影列表
+        Back to Movies
       </Link>
 
       <header className="mb-6">
-        <h1 className="font-heading text-2xl font-semibold text-foreground">编辑电影{movie ? `:${movie.title}` : ""}</h1>
+        <h1 className="font-heading text-2xl font-semibold text-foreground">Edit Movie{movie ? `: ${movie.title}` : ""}</h1>
       </header>
 
       {justCreated && (
         <div className="mb-6">
           <AnimatedFormBanner
             variant="success"
-            message="电影已创建,状态默认为「即将上映」。现在可以在下方上传海报/背景图,信息确认无误后再手动切换为「正在热映」。"
+            message='Movie created — status defaults to "Coming Soon." You can upload the poster/backdrop below now, then switch it to "Now Playing" once everything checks out.'
           />
         </div>
       )}
@@ -101,23 +101,23 @@ export default function EditMoviePage() {
         <div className="mb-6">
           <AnimatedFormBanner
             variant="destructive"
-            message="电影已创建,但海报/背景图设置失败,请在下方手动上传。"
+            message="Movie created, but setting the poster/backdrop failed. Please upload them manually below."
           />
         </div>
       )}
       {savedBanner && (
         <div className="mb-6">
-          <AnimatedFormBanner variant="success" message="修改已保存。" />
+          <AnimatedFormBanner variant="success" message="Changes saved." />
         </div>
       )}
 
       {!movie || !genres ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">加载中...</p>
+        <p className="py-8 text-center text-sm text-muted-foreground">Loading...</p>
       ) : (
         <div className="space-y-6">
           <Card className="shadow-sm">
             <CardHeader>
-              <CardTitle>基本信息</CardTitle>
+              <CardTitle>Basic Info</CardTitle>
             </CardHeader>
             <CardContent>
               <MovieForm
@@ -130,19 +130,19 @@ export default function EditMoviePage() {
                   setImageSetupFailed(false);
                   setSavedBanner(true);
                 }}
-                submitLabel="保存修改"
-                submittingLabel="保存中…"
+                submitLabel="Save Changes"
+                submittingLabel="Saving…"
               />
             </CardContent>
           </Card>
 
           <Card className="shadow-sm">
             <CardHeader>
-              <CardTitle>海报 / 背景图</CardTitle>
+              <CardTitle>Poster / Backdrop</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               <MovieImageUpload
-                label="海报(竖版,列表/详情页使用)"
+                label="Poster (portrait, used on listings/detail pages)"
                 aspect="poster"
                 currentUrl={movie.posterUrl}
                 onUpload={(file) => callAuthorized((token) => uploadMoviePoster(token, id, file))}
@@ -150,7 +150,7 @@ export default function EditMoviePage() {
               />
               <Separator />
               <MovieImageUpload
-                label="背景图(横版,首页 Hero 使用)"
+                label="Backdrop (landscape, used on the homepage hero)"
                 aspect="backdrop"
                 currentUrl={movie.backdropUrl}
                 onUpload={(file) => callAuthorized((token) => uploadMovieBackdrop(token, id, file))}

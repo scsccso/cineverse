@@ -28,9 +28,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 const GRANULARITY_OPTIONS: { value: ReportGranularity; label: string }[] = [
-  { value: "DAY", label: "按日" },
-  { value: "WEEK", label: "按周" },
-  { value: "MONTH", label: "按月" },
+  { value: "DAY", label: "Day" },
+  { value: "WEEK", label: "Week" },
+  { value: "MONTH", label: "Month" },
 ];
 
 export default function AdminDashboardPage() {
@@ -41,7 +41,7 @@ export default function AdminDashboardPage() {
   const [sales, setSales] = useState<SalesReportResponse | null>(null);
   const [occupancy, setOccupancy] = useState<OccupancyReportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Bumped by the "重试" button to re-run the effect below without touching
+  // Bumped by the "Retry" button to re-run the effect below without touching
   // filter/granularity — a plain event-handler setState, not one inside the
   // effect body, so it's outside react-hooks/set-state-in-effect's concern.
   const [retryToken, setRetryToken] = useState(0);
@@ -66,7 +66,7 @@ export default function AdminDashboardPage() {
         setError(null);
       })
       .catch(() => {
-        if (!cancelled) setError("加载报表失败,请稍后重试");
+        if (!cancelled) setError("Failed to load reports. Please try again later.");
       });
     return () => {
       cancelled = true;
@@ -87,8 +87,8 @@ export default function AdminDashboardPage() {
   return (
     <section className="mx-auto max-w-6xl px-6 py-10">
       <header className="mb-6">
-        <h1 className="font-heading text-2xl font-semibold text-foreground">管理后台 · 报表</h1>
-        <p className="mt-1 text-sm text-muted-foreground">销售报表与上座率分析(Phase 8)</p>
+        <h1 className="font-heading text-2xl font-semibold text-foreground">Admin · Reports</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Sales and occupancy reports (Phase 8)</p>
       </header>
 
       <div className="mb-8 rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -102,7 +102,7 @@ export default function AdminDashboardPage() {
         >
           {error}
           <Button type="button" variant="outline" size="sm" onClick={() => setRetryToken((token) => token + 1)}>
-            重试
+            Retry
           </Button>
         </div>
       )}
@@ -110,9 +110,9 @@ export default function AdminDashboardPage() {
       <div className="space-y-8">
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
-            <CardTitle>销售报表</CardTitle>
+            <CardTitle>Sales Report</CardTitle>
             <div className="flex flex-wrap items-center gap-3">
-              <div className="flex gap-1" role="group" aria-label="时间粒度">
+              <div className="flex gap-1" role="group" aria-label="Time granularity">
                 {GRANULARITY_OPTIONS.map((option) => (
                   <Button
                     key={option.value}
@@ -144,15 +144,15 @@ export default function AdminDashboardPage() {
               <>
                 <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                   <StatTile
-                    label="总营收"
+                    label="Total Revenue"
                     value={formatCurrency(sales.totalRevenue, sales.currency)}
-                    hint={`${filter.from} 至 ${filter.to},仅 CONFIRMED 订单`}
+                    hint={`${filter.from} to ${filter.to}, CONFIRMED bookings only`}
                   />
-                  <StatTile label="订单数" value={String(totalBookings)} />
+                  <StatTile label="Bookings" value={String(totalBookings)} />
                   <StatTile
-                    label="待对账金额"
+                    label="Pending Reconciliation"
                     value={formatCurrency(sales.pendingReconciliationAmount, sales.currency)}
-                    hint="Stripe 报告支付成功但未计入营收,需人工核对"
+                    hint="Stripe reported a successful payment that isn't counted in revenue — needs manual reconciliation"
                     tone={sales.pendingReconciliationAmount > 0 ? "warning" : "default"}
                   />
                 </div>
@@ -165,7 +165,7 @@ export default function AdminDashboardPage() {
 
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
-            <CardTitle>上座率分析</CardTitle>
+            <CardTitle>Occupancy Analysis</CardTitle>
             {occupancy && occupancy.showtimes.length > 0 && (
               <ExportButtons
                 onExport={(format) =>
@@ -180,13 +180,13 @@ export default function AdminDashboardPage() {
             {occupancyLoading || !occupancy ? (
               <ReportCardSkeleton />
             ) : occupancy.showtimes.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">所选时间范围内没有场次</p>
+              <p className="py-8 text-center text-sm text-muted-foreground">No showtimes in the selected date range</p>
             ) : (
               <>
                 <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  <StatTile label="总体上座率" value={formatPercent(occupancy.overallOccupancyRate)} />
-                  <StatTile label="已订座位" value={String(occupancy.totalBookedSeats)} />
-                  <StatTile label="总座位数" value={String(occupancy.totalSeats)} />
+                  <StatTile label="Overall Occupancy" value={formatPercent(occupancy.overallOccupancyRate)} />
+                  <StatTile label="Booked Seats" value={String(occupancy.totalBookedSeats)} />
+                  <StatTile label="Total Seats" value={String(occupancy.totalSeats)} />
                 </div>
                 <OccupancyChart showtimes={occupancy.showtimes} />
                 <OccupancyTable showtimes={occupancy.showtimes} />
@@ -204,16 +204,16 @@ function SalesTable({ buckets, currency }: { buckets: SalesBucket[]; currency: s
   return (
     <details className="mt-4 group/details">
       <summary className="flex min-h-11 cursor-pointer items-center text-sm text-muted-foreground hover:text-foreground">
-        查看数据表格({buckets.length} 行)
+        View data table ({buckets.length} rows)
       </summary>
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-sm">
-          <caption className="sr-only">按时间段的营收明细</caption>
+          <caption className="sr-only">Revenue breakdown by period</caption>
           <thead>
             <tr className="border-b border-border bg-muted/50 text-left text-muted-foreground">
-              <th scope="col" className="px-3 py-2 font-medium">时间段</th>
-              <th scope="col" className="px-3 py-2 font-medium">营收</th>
-              <th scope="col" className="px-3 py-2 font-medium">订单数</th>
+              <th scope="col" className="px-3 py-2 font-medium">Period</th>
+              <th scope="col" className="px-3 py-2 font-medium">Revenue</th>
+              <th scope="col" className="px-3 py-2 font-medium">Bookings</th>
             </tr>
           </thead>
           <tbody>
@@ -235,18 +235,18 @@ function OccupancyTable({ showtimes }: { showtimes: ShowtimeOccupancy[] }) {
   return (
     <details className="mt-4 group/details">
       <summary className="flex min-h-11 cursor-pointer items-center text-sm text-muted-foreground hover:text-foreground">
-        查看数据表格({showtimes.length} 场)
+        View data table ({showtimes.length} showtimes)
       </summary>
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-sm">
-          <caption className="sr-only">各场次上座率明细</caption>
+          <caption className="sr-only">Occupancy breakdown by showtime</caption>
           <thead>
             <tr className="border-b border-border bg-muted/50 text-left text-muted-foreground">
-              <th scope="col" className="px-3 py-2 font-medium">场次</th>
-              <th scope="col" className="px-3 py-2 font-medium">电影</th>
-              <th scope="col" className="px-3 py-2 font-medium">影厅</th>
-              <th scope="col" className="px-3 py-2 font-medium">已订/总座位</th>
-              <th scope="col" className="px-3 py-2 font-medium">上座率</th>
+              <th scope="col" className="px-3 py-2 font-medium">Showtime</th>
+              <th scope="col" className="px-3 py-2 font-medium">Movie</th>
+              <th scope="col" className="px-3 py-2 font-medium">Hall</th>
+              <th scope="col" className="px-3 py-2 font-medium">Booked/Total Seats</th>
+              <th scope="col" className="px-3 py-2 font-medium">Occupancy</th>
             </tr>
           </thead>
           <tbody>

@@ -7,17 +7,17 @@ import { cinemaLocalTimeToIso } from "@/lib/format";
  * string→string/number coercion — see cinemaLocalTimeToIso's doc comment for
  * why it needs to be interpreted as cinema-local time, not browser-local. */
 export const showtimeFormSchema = z.object({
-  movieId: z.string().trim().min(1, "请选择电影"),
-  hallId: z.string().trim().min(1, "请选择影厅"),
+  movieId: z.string().trim().min(1, "Please select a movie"),
+  hallId: z.string().trim().min(1, "Please select a hall"),
   startTime: z
     .string()
-    .min(1, "请选择开始时间")
+    .min(1, "Please select a start time")
     .transform((value) => cinemaLocalTimeToIso(value)),
   price: z
     .string()
     .trim()
-    .min(1, "请输入价格")
-    .refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0, "价格必须是不小于 0 的数字")
+    .min(1, "Please enter a price")
+    .refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0, "Price must be a number no less than 0")
     .transform((value) => Number(value)),
 });
 

@@ -41,7 +41,7 @@ export function OccupancyChart({ showtimes }: OccupancyChartProps) {
   }));
 
   return (
-    <div className="h-72 w-full" role="img" aria-label="各场次上座率柱状图">
+    <div className="h-72 w-full" role="img" aria-label="Bar chart of occupancy rate by showtime">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
           <CartesianGrid stroke="var(--border)" vertical={false} />
@@ -85,10 +85,10 @@ function OccupancyTooltipContent({ active, payload }: OccupancyTooltipProps) {
       </p>
       <p className="mt-1 font-mono font-semibold text-popover-foreground">
         {formatPercent(point.occupancyRate)}
-        <span className="ml-1.5 font-sans font-normal text-muted-foreground">上座率</span>
+        <span className="ml-1.5 font-sans font-normal text-muted-foreground">Occupancy</span>
       </p>
       <p className="text-muted-foreground">
-        {point.bookedSeats} / {point.totalSeats} 座
+        {point.bookedSeats} / {point.totalSeats} seats
       </p>
     </div>
   );
