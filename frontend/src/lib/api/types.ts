@@ -186,7 +186,44 @@ export interface HallResponse {
   updatedAt: string;
 }
 
+/** POST /api/v1/cinemas body — ADMIN only. No update/delete counterpart, see CLAUDE.md Phase 3. */
+export interface CreateCinemaRequest {
+  name: string;
+  address: string | null;
+}
+
+/** POST /api/v1/cinemas/{cinemaId}/halls body — ADMIN only. Seats are generated
+ * automatically from these dimensions (last row COUPLE, everything else STANDARD);
+ * there's no field here to choose that, and no update/delete counterpart either —
+ * see CLAUDE.md Phase 3 and HallForm's doc comment. */
+export interface CreateHallRequest {
+  name: string;
+  totalRows: number;
+  totalColumns: number;
+}
+
 export type SeatType = "STANDARD" | "COUPLE";
+
+/** One row of GET /api/v1/halls/{id}/seats — the same shape a seat map would render
+ * from, reused here just to tally the STANDARD/COUPLE split for the cinemas admin page. */
+export interface HallSeatEntry {
+  id: string;
+  rowLabel: string;
+  /** Starting column; for COUPLE seats this is the left of the pair. */
+  columnNumber: number;
+  /** How many physical grid columns this seat occupies (STANDARD=1, COUPLE=2). */
+  columnSpan: number;
+  seatType: SeatType;
+}
+
+/** GET /api/v1/halls/{id}/seats — public, full seat layout for one hall. */
+export interface HallSeatsResponse {
+  hallId: string;
+  hallName: string;
+  totalRows: number;
+  totalColumns: number;
+  seats: HallSeatEntry[];
+}
 
 /** Live per-seat status from the seat picker's polling endpoint — absent booking means AVAILABLE. */
 export type SeatStatus = "AVAILABLE" | "LOCKED" | "BOOKED";

@@ -1668,6 +1668,48 @@ Phase 7 就已实现测过)对应的 admin 页面——**零后端改动**,复�
 不是巧合相同)。跑完立刻清理并核对清理后计数为 0。`npm run build`/
 `npm run lint` 干净。没有验证的:真实浏览器里的像素级渲染/交互。
 
+### 影院/影厅管理 `/admin/cinemas`(2026-08-15)
+
+补上此前只能靠 curl/Swagger 操作的分店/影厅浏览+创建能力(`POST /cinemas`、
+`POST /cinemas/{id}/halls`,Phase 3 就已实现测过)对应的 admin 页面——同样
+**零后端改动**。跟上面「电子票核销」是同一天交付的两个独立功能,分两次
+提交,这里只记录影院管理自己的决定。
+
+- **座位类型分布(STANDARD/COUPLE 各多少个)来自真实的
+  `GET /halls/{id}/seats` 逐条统计,不是在前端按 totalRows/totalColumns
+  重新实现一遍 `SeatLayoutGenerator` 的生成规则**——后者等于把后端的业务
+  规则(最后一排是情侣座、每 2 列配对,奇数列时落单座退化成 STANDARD)复制
+  一份到前端维护两份,一旦后端算法以后变了(哪怕只影响新建的影厅),这份
+  前端复制会对老影厅的真实数据默默算出错误答案。影厅数量在 MVP 量级下
+  (个位数)多几次这样的只读 GET 请求可以接受,跟这个项目一贯的"小规模
+  场景下 N+1 可接受"取舍一致(如 `admin/showtimes/new` 的电影下拉、
+  `admin/cinemas` 列表页本身统计每个分店的影厅数量)。
+- **没有单一 cinema 的 GET 接口**(`CinemaController` 只有 `list()` 和
+  按 cinema 分组的 `listHalls`),分店详情页 `/admin/cinemas/[id]` 因此
+  拉全量 `listCinemas()` 后在前端按 id 过滤——跟 `admin/showtimes/new`
+  按状态过滤电影下拉是同一个"拉全量、前端过滤"模式,不是这次新发明的。
+- **`listCinemas`/`listHalls` 从 `admin-showtimes.ts` 挪到新建的
+  `admin-cinemas.ts`**:这两个函数最初是为了给场次表单的影厅下拉框提供
+  数据,顺手加在了 `admin-showtimes.ts` 里;这次影院管理成为一个完整功能
+  后,它们真正的归属域是"cinemas"不是"showtimes",挪过去之后
+  `admin/showtimes/new/page.tsx` 改成从新文件 import,行为完全不变。
+- **警示文案如实反映当前系统能力,没有照抄 Phase 3 原文的"删除重建"说法**
+  ——`CinemaController`/`HallController` 目前完全没有任何 delete 端点
+  (grep 确认过,不是遗漏),所以创建影厅表单里的提示写的是"座位布局无法
+  修改,且这个系统目前没有删除影厅的方式,创建前请仔细核对行列数",不是
+  "删除重建"——后者在 Phase 3 文档里是概念性描述,不代表这个操作在 API
+  层面真的存在;把一个不存在的能力写进 admin 提示文案,踩坑的还是 admin。
+
+**验证**:同样用真实跑着的 Postgres/Redis/后端 + 自建自清理的数据(见上面
+「电子票核销」的验证记录——两个功能的验证跑在同一个 `e2e-verify.mjs`
+脚本里,一共 31 项断言全部通过):创建测试分店/影厅、核对它们出现在
+`GET /cinemas`、`GET /cinemas/{id}/halls` 的返回里、核对
+`GET /halls/{id}/seats` 逐条统计出的 STANDARD/COUPLE 数量正好等于 3 行
+4 列布局按 `SeatLayoutGenerator` 规则应得的 8 + 2(验证的正是上面第一条
+决定里提到的"不在前端重新实现这份规则、只信任真实返回数据"这个选择本身
+是对的)。跑完立刻清理并核对清理后计数为 0。`npm run build`/`npm run
+lint` 干净。没有验证的:真实浏览器里的像素级渲染/交互。
+
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
 - 评价评分

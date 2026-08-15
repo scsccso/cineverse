@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { CinemaResponse, CreateShowtimeRequest, HallResponse, ShowtimeResponse } from "./types";
+import type { CreateShowtimeRequest, ShowtimeResponse } from "./types";
 
 /** GET /api/v1/showtimes is public (no Authorization needed) — the same
  * endpoint the customer booking flow's listShowtimesByMovie hits, just with
@@ -36,18 +36,4 @@ export function deleteShowtime(token: string, id: string): Promise<void> {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
-}
-
-/** GET /api/v1/cinemas is public. This MVP has exactly one cinema (see
- * CLAUDE.md Phase 3), so the hall dropdown's data source is "the first
- * cinema's halls" — fetching the cinema list first rather than hardcoding
- * its id means a second cinema, if one's ever added, doesn't silently leave
- * its halls unreachable from this form. */
-export function listCinemas(): Promise<CinemaResponse[]> {
-  return apiFetch<CinemaResponse[]>("/api/v1/cinemas");
-}
-
-/** GET /api/v1/cinemas/{id}/halls is public. */
-export function listHalls(cinemaId: string): Promise<HallResponse[]> {
-  return apiFetch<HallResponse[]>(`/api/v1/cinemas/${cinemaId}/halls`);
 }
