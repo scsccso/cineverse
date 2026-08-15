@@ -257,6 +257,29 @@ export interface CheckoutSessionResponse {
   checkoutUrl: string;
 }
 
+// ---- Ticket redemption (admin check-in UI) ----
+
+export interface RedeemTicketRequest {
+  ticketCode: string;
+}
+
+export interface TicketSeatSummary {
+  rowLabel: string;
+  columnNumber: number;
+  seatType: SeatType;
+}
+
+/** POST /api/v1/tickets/redeem response — enough for the redeeming staff member to
+ * visually confirm this is the right movie/showtime/seats before waving the holder in. */
+export interface TicketRedemptionResponse {
+  bookingId: string;
+  movieTitle: string;
+  hallName: string;
+  showtimeStartTime: string;
+  seats: TicketSeatSummary[];
+  redeemedAt: string;
+}
+
 // ---- Admin reports (Phase 8) ----
 
 export type ReportGranularity = "DAY" | "WEEK" | "MONTH";

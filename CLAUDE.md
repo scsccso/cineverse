@@ -1626,6 +1626,48 @@ DELETE(有订单时 409)/GET 在 Phase 4 就已经齐全并测试过,这次只�
   点击 `Button` 触发 `onClick` 这条链路)——这是本次交付相对以往几批唯一
   收窄的验证边界,如实记录,不是遗漏。
 
+### Admin 电子票核销 `/admin/tickets/redeem`(2026-08-15)
+
+补上此前只能靠 curl/Swagger 操作的入场核销能力(`POST /api/v1/tickets/redeem`,
+Phase 7 就已实现测过)对应的 admin 页面——**零后端改动**,复用已有接口原样
+调用,请求体格式、成功/失败响应结构先对着现有实现和集成测试核实过一遍才
+动手。跟下面「影院/影厅管理」是同一天交付的两个独立功能,分两次提交,这里
+只记录电子票核销自己的决定。
+
+- **失败态区分三种情况,不是一句模糊错误覆盖**:400(签名/格式不对,
+  `InvalidTicketCodeException`)和 409(签名是真的,但 booking 当前不能被
+  核销)在视觉和标题上都不同——400 走红色 `CircleX`,标题"Invalid Ticket
+  Code";409 走已经验证过的琥珀 warning 色调(`--chart-amber-*`,同
+  `StatTile`/`ScheduleShowtimesNudge`),标题"Cannot Redeem This Ticket"。
+  409 背后其实是两个不同的后端异常(`TicketAlreadyRedeemedException` /
+  `BookingNotConfirmedException`),只在消息文本上不同,状态码和响应体里
+  都没有更细的判别字段——没有尝试用字符串匹配拆出第四种更具体的标题(这个
+  项目一贯反对从错误字符串里解析结构化数据,参考 Phase 5 座位冲突处理的
+  先例),两条消息本身都已经是完整清楚的句子,原样展示。E2E 脚本验证过这
+  两条消息文本确实不同("Ticket was already redeemed at ..." vs "Booking
+  is EXPIRED, not CONFIRMED — cannot be redeemed"),不是巧合相同、也不是
+  没测到区别就假设有区别。
+- **表单提交后无论成功失败都清空输入框并重新聚焦**:这是一个"扫码/输入 →
+  看结果 → 扫下一张"的连续核销流程(扫码枪当键盘输入 + 回车,或工作人员
+  手动输入),不是需要反复修改重提交的表单;上一次尝试的结果留在下方结果
+  面板里,不会因为清空输入框而丢失。
+- 图标选用 `CircleX`/`CircleCheck`(不是 `XCircle`/`CheckCircle`)——这个
+  项目当前的 lucide-react(1.28)两个名字都存在,但后者是 deprecated 别名
+  (`x-circle.mjs` 内容就是 `export { default } from './circle-x.mjs'`),
+  这个项目已有代码(`AnimatedFormBanner`)用的是前者,跟随既有约定,不是
+  训练数据里更熟悉的旧名字。
+
+**验证**:真实浏览器不可用(这次会话没有 Playwright 之类的工具),延续
+"Admin 电影编辑页:排场次引导卡片"那次的验证方式——写了一个 Node 脚本
+(`e2e-verify.mjs`),对着真实跑着的 Postgres/Redis/后端跑完整核销流程:
+自建一笔测试订单(引用一部已有种子电影排一场自建的测试场次,不碰种子数据
+本身)、直接改库把它标记 CONFIRMED(绕过 Stripe——这个任务验证的是核销
+本身,不是 Phase 6 已经有自己集成测试覆盖的支付流程)拿到真实签发的票据
+编码,验证核销成功、二次核销 409、伪造编码 400,以及"booking 签名是真的
+但已不是 CONFIRMED"这第四种场景(409,消息文本和"已核销过"那条确实不同,
+不是巧合相同)。跑完立刻清理并核对清理后计数为 0。`npm run build`/
+`npm run lint` 干净。没有验证的:真实浏览器里的像素级渲染/交互。
+
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
 - 评价评分
