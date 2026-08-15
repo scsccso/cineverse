@@ -179,6 +179,19 @@ Full architectural decisions and rationale for each Phase live in
 
 ## Known Trade-offs & Limitations
 
+- **Tech stack settled on Java 21 LTS + Spring Boot 3.5.15, not the project's
+  original Java 25 + Spring Boot 4.1.** This was a hiring-market alignment
+  call, not a technical shortcoming — in the current hiring market, "Java
+  LTS" and "Spring Boot 3" still default to these versions, not a
+  recently-released major line whose ecosystem and tutorials are still
+  catching up. The cost: Spring Boot 3.5 hit OSS EOL on 2026-06-30 (the last
+  minor release in the 3.x line — there's no "newer but still-maintained"
+  3.x to move to instead). Chosen deliberately, not overlooked: a portfolio
+  project doesn't need an ongoing security-patch supply, and what an
+  interviewer is actually gauging is familiarity with the Spring Boot 3.x
+  ecosystem, not whether this specific deployment can receive a patch today.
+  Full research and trade-off record in
+  [`docs/DECISIONS.md`](./docs/DECISIONS.md).
 - **Cinema/hall management has no admin UI.** The backend supports creating
   cinemas and halls (with automatic seat generation), but there's
   intentionally no update/delete API — Phase 3 froze this as a fixed MVP
@@ -192,6 +205,31 @@ Full architectural decisions and rationale for each Phase live in
   on high-DPR (Retina-class) mobile screens; the root cause has been
   diagnosed in the image-optimization pipeline but not yet fixed.
 - **No hosted demo yet** — see the note under Screenshots above.
+
+---
+
+## Project Structure
+
+```
+CineVerse/
+├── CLAUDE.md                 # Project memory: architecture decisions, roadmap, currently active tech choices
+├── docs/DECISIONS.md         # Decision log: full write-ups trimmed out of CLAUDE.md, debugging narratives, superseded decisions
+├── docs/DEVELOPMENT.md       # Developer reference: API curl examples, environment setup, manual verification steps
+├── docs/DATABASE.md          # Database schema reference: table structure, foreign-key strategy, field-level notes
+├── docker-compose.yml        # Local dependencies: Postgres 16 + Redis 7
+├── .env.example               # docker-compose variables + the Stripe key read directly by the backend process
+├── cineverse-backend/        # Spring Boot backend (Maven project)
+│   └── src/main/resources/db/migration/  # Flyway migration scripts
+└── frontend/                 # Next.js frontend
+    ├── .env.example           # NEXT_PUBLIC_API_BASE_URL example
+    └── src/
+        ├── app/
+        │   ├── (customer)/    # Customer route group: /, /login, /register, /profile, /showtimes/[id](/seats), /bookings(/[id]/confirmed)
+        │   └── admin/         # Admin backend (independent nav shell + role check): /admin/dashboard, /admin/movies(/new, /[id]/edit), /admin/showtimes(/new), /admin/users
+        ├── components/        # ui (shadcn) / auth / layout / motion / booking / admin
+        ├── lib/                # API client, auth context, zod schemas
+        └── proxy.ts           # Route protection (Next 16: middleware renamed to proxy)
+```
 
 ---
 
