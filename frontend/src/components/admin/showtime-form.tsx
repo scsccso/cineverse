@@ -33,6 +33,13 @@ export interface ShowtimeFormProps {
   /** Pre-filtered by the caller to NOW_PLAYING/COMING_SOON — see admin/showtimes/new/page.tsx. */
   movies: MovieResponse[];
   halls: HallResponse[];
+  /** Seeds the movie <select>'s default value — used when arriving from a
+   * specific movie's edit page (the "Schedule a Showtime" nudge) instead of
+   * the plain showtimes list. A value not present in `movies` (stale link,
+   * hand-edited URL) just leaves the select on its blank "Select a movie"
+   * option — no validation needed here, the field is still required at
+   * submit time either way. */
+  preselectedMovieId?: string;
   onSave: (request: CreateShowtimeRequest) => Promise<ShowtimeResponse>;
   onSaved: (saved: ShowtimeResponse) => void | Promise<void>;
 }
@@ -44,7 +51,7 @@ const SELECT_CLASSNAME =
  * (CLAUDE.md Phase 4), so unlike MovieForm this doesn't take an
  * initialShowtime prop or submitLabel/submittingLabel props for a second
  * caller that will never exist. */
-export function ShowtimeForm({ movies, halls, onSave, onSaved }: ShowtimeFormProps) {
+export function ShowtimeForm({ movies, halls, preselectedMovieId, onSave, onSaved }: ShowtimeFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
 
   const {
@@ -53,7 +60,7 @@ export function ShowtimeForm({ movies, halls, onSave, onSaved }: ShowtimeFormPro
     formState: { errors, isSubmitting },
   } = useForm<ShowtimeFormInput, unknown, ShowtimeFormOutput>({
     resolver: zodResolver(showtimeFormSchema),
-    defaultValues: { movieId: "", hallId: "", startTime: "", price: "" },
+    defaultValues: { movieId: preselectedMovieId ?? "", hallId: "", startTime: "", price: "" },
   });
 
   async function onSubmit(values: ShowtimeFormOutput) {

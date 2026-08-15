@@ -7,12 +7,16 @@ import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { getMovie } from "@/lib/api/movies";
 import { getGenres, updateMovie, uploadMoviePoster, uploadMovieBackdrop } from "@/lib/api/admin-movies";
-import type { GenreResponse, MovieResponse } from "@/lib/api/types";
+import { listShowtimes } from "@/lib/api/admin-showtimes";
+import { ApiError } from "@/lib/api/client";
+import type { GenreResponse, MovieResponse, MovieStatus } from "@/lib/api/types";
 import { MovieForm } from "@/components/admin/movie-form";
 import { MovieImageUpload } from "@/components/admin/movie-image-upload";
+import { ScheduleShowtimesNudge } from "@/components/admin/schedule-showtimes-nudge";
 import { AnimatedFormBanner } from "@/components/motion/animated-form-banner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 
 export default function EditMoviePage() {
   const { id } = useParams<{ id: string }>();
@@ -42,10 +46,31 @@ export default function EditMoviePage() {
   // already applied, nothing to do below" and "images failed, do something
   // below" call for different messages, not the same generic one.
   const [imageSetupFailed, setImageSetupFailed] = useState(() => searchParams.get("imageSetupFailed") === "1");
+  // Set when returning from /admin/showtimes/new after scheduling a
+  // showtime for this movie (see ScheduleShowtimesNudge's "Schedule a
+  // Showtime" link and admin/showtimes/new/page.tsx's redirect). One-time
+  // like the two flags above, not a standing condition — see the banner
+  // rendered below for why this can't just be "COMING_SOON + has upcoming
+  // showtimes" checked on every load (pre-sale movies can legitimately stay
+  // COMING_SOON with showtimes already on sale).
+  const [showtimeAdded, setShowtimeAdded] = useState(() => searchParams.get("showtimeAdded") === "1");
   const [savedBanner, setSavedBanner] = useState(false);
+  // null covers "still loading" and "the fetch failed" alike — both make
+  // ScheduleShowtimesNudge render nothing, see its own doc comment. Fetched
+  // independently of the movie/genres Promise.all below on purpose: this is
+  // a secondary, nice-to-have signal for a card further down the page, and
+  // its failure must not trigger the loadError branch meant for "the movie
+  // itself may have been deleted".
+  const [upcomingShowtimeCount, setUpcomingShowtimeCount] = useState<number | null>(null);
+  const [statusSwitchError, setStatusSwitchError] = useState<string | null>(null);
+  const [isApplyingStatus, setIsApplyingStatus] = useState(false);
 
   useEffect(() => {
-    if (searchParams.get("created") === "1" || searchParams.get("imageSetupFailed") === "1") {
+    if (
+      searchParams.get("created") === "1" ||
+      searchParams.get("imageSetupFailed") === "1" ||
+      searchParams.get("showtimeAdded") === "1"
+    ) {
       router.replace(`/admin/movies/${id}/edit`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -66,6 +91,66 @@ export default function EditMoviePage() {
       cancelled = true;
     };
   }, [id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listShowtimes({ movieId: id })
+      .then((showtimes) => {
+        if (cancelled) return;
+        const now = Date.now();
+        setUpcomingShowtimeCount(showtimes.filter((showtime) => new Date(showtime.startTime).getTime() > now).length);
+      })
+      .catch(() => {
+        // Silent on purpose — see upcomingShowtimeCount's doc comment above.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  function handleSaved(saved: MovieResponse) {
+    setMovie(saved);
+    setJustCreated(false);
+    setImageSetupFailed(false);
+    setShowtimeAdded(false);
+    setStatusSwitchError(null);
+    setSavedBanner(true);
+  }
+
+  /** Backs both the persistent nudge card's "Mark as Ended" and the
+   * one-time post-scheduling banner's "Switch to Now Playing" — same
+   * full-replace PUT MovieForm's Save button already makes (see
+   * MovieRequest's doc comment on why every field has to be resent), just
+   * pre-filled from the currently-loaded movie with only status flipped, and
+   * pre-submitted. Still one explicit admin click either way, not an
+   * automatic status change. */
+  async function applyStatus(next: MovieStatus) {
+    if (!movie) return;
+    setStatusSwitchError(null);
+    setIsApplyingStatus(true);
+    try {
+      const saved = await callAuthorized((token) =>
+        updateMovie(token, id, {
+          title: movie.title,
+          description: movie.description,
+          tagline: movie.tagline,
+          durationMinutes: movie.durationMinutes,
+          contentRating: movie.contentRating,
+          userRating: movie.userRating,
+          trailerUrl: movie.trailerUrl,
+          status: next,
+          genreIds: movie.genres.map((genre) => genre.id),
+        }),
+      );
+      handleSaved(saved);
+    } catch (error) {
+      setStatusSwitchError(
+        error instanceof ApiError ? error.message : "Failed to update status. Please try again later.",
+      );
+    } finally {
+      setIsApplyingStatus(false);
+    }
+  }
 
   if (loadError) {
     return (
@@ -110,6 +195,28 @@ export default function EditMoviePage() {
           <AnimatedFormBanner variant="success" message="Changes saved." />
         </div>
       )}
+      {showtimeAdded && movie && (
+        <div className="mb-6">
+          {movie.status === "COMING_SOON" ? (
+            <AnimatedFormBanner
+              variant="success"
+              message='Showtime added. Switch this movie to "Now Playing" now?'
+              action={
+                <Button type="button" onClick={() => applyStatus("NOW_PLAYING")} disabled={isApplyingStatus}>
+                  {isApplyingStatus ? "Switching…" : "Switch to Now Playing"}
+                </Button>
+              }
+            />
+          ) : (
+            <AnimatedFormBanner variant="success" message="Showtime added." />
+          )}
+        </div>
+      )}
+      {statusSwitchError && (
+        <div className="mb-6">
+          <AnimatedFormBanner variant="destructive" message={statusSwitchError} />
+        </div>
+      )}
 
       {!movie || !genres ? (
         <p className="py-8 text-center text-sm text-muted-foreground">Loading...</p>
@@ -124,12 +231,7 @@ export default function EditMoviePage() {
                 genres={genres}
                 initialMovie={movie}
                 onSave={(request) => callAuthorized((token) => updateMovie(token, id, request))}
-                onSaved={(saved) => {
-                  setMovie(saved);
-                  setJustCreated(false);
-                  setImageSetupFailed(false);
-                  setSavedBanner(true);
-                }}
+                onSaved={handleSaved}
                 submitLabel="Save Changes"
                 submittingLabel="Saving…"
               />
@@ -158,6 +260,14 @@ export default function EditMoviePage() {
               />
             </CardContent>
           </Card>
+
+          <ScheduleShowtimesNudge
+            movieId={id}
+            status={movie.status}
+            upcomingShowtimeCount={upcomingShowtimeCount}
+            onMarkEnded={() => applyStatus("ENDED")}
+            isMarkingEnded={isApplyingStatus}
+          />
         </div>
       )}
     </section>
