@@ -208,6 +208,31 @@ Full architectural decisions and rationale for each Phase live in
 
 ---
 
+## Project Structure
+
+```
+CineVerse/
+├── CLAUDE.md                 # Project memory: architecture decisions, roadmap, currently active tech choices
+├── docs/DECISIONS.md         # Decision log: full write-ups trimmed out of CLAUDE.md, debugging narratives, superseded decisions
+├── docs/DEVELOPMENT.md       # Developer reference: API curl examples, environment setup, manual verification steps
+├── docs/DATABASE.md          # Database schema reference: table structure, foreign-key strategy, field-level notes
+├── docker-compose.yml        # Local dependencies: Postgres 16 + Redis 7
+├── .env.example               # docker-compose variables + the Stripe key read directly by the backend process
+├── cineverse-backend/        # Spring Boot backend (Maven project)
+│   └── src/main/resources/db/migration/  # Flyway migration scripts
+└── frontend/                 # Next.js frontend
+    ├── .env.example           # NEXT_PUBLIC_API_BASE_URL example
+    └── src/
+        ├── app/
+        │   ├── (customer)/    # Customer route group: /, /login, /register, /profile, /showtimes/[id](/seats), /bookings(/[id]/confirmed)
+        │   └── admin/         # Admin backend (independent nav shell + role check): /admin/dashboard, /admin/movies(/new, /[id]/edit), /admin/showtimes(/new), /admin/users
+        ├── components/        # ui (shadcn) / auth / layout / motion / booking / admin
+        ├── lib/                # API client, auth context, zod schemas
+        └── proxy.ts           # Route protection (Next 16: middleware renamed to proxy)
+```
+
+---
+
 ## Running Locally
 
 Environment setup, common pitfalls, and step-by-step run instructions live in
