@@ -272,7 +272,12 @@ Next.js 按文件系统渲染组件树,两者互不出现在对方的渲染结�
   生成完再检查),因为这是本模块最容易埋 bug 的地方,专门写了单元测试覆盖。
 - **座位布局不可局部修改**:影厅一旦创建、座位随之自动生成,没有"改座位类型"
   或"改布局"的 API。要换布局就删除整个 hall 重建。这是有意为之的 MVP 边界,不
-  是遗漏。
+  是遗漏。**更正(2026-08-15)**:"删除整个 hall 重建"这句原文不准确——开发
+  「影院/影厅管理 `/admin/cinemas`」admin 页面时核实过,`CinemaController`/
+  `HallController` 目前完全没有 delete 端点,"删除重建"这个操作在 API 层面
+  根本不存在;真实情况是座位布局一旦创建就不可撤销,要重来只能在数据库层面
+  手动处理,不是这个系统内任何 admin 操作能做到的。这次交付时新页面上给
+  admin 看的提示文案已经按准确说法写,不是照抄这句"删除重建"。
 - **`GET /api/v1/halls/{id}/seats` 的响应格式是为 Phase 5 预留的**:每个座位
   除了 `rowLabel`/`columnNumber`/`seatType`,还带一个派生字段 `columnSpan`
   (STANDARD=1,COUPLE=2),这样前端渲染座位图时不需要自己硬编码"哪些类型该占
@@ -1625,6 +1630,90 @@ DELETE(有订单时 409)/GET 在 Phase 4 就已经齐全并测试过,这次只�
   问题;**没有验证的是真实浏览器里的实际渲染/交互**(卡片的具体像素观感、
   点击 `Button` 触发 `onClick` 这条链路)——这是本次交付相对以往几批唯一
   收窄的验证边界,如实记录,不是遗漏。
+
+### Admin 电子票核销 `/admin/tickets/redeem`(2026-08-15)
+
+补上此前只能靠 curl/Swagger 操作的入场核销能力(`POST /api/v1/tickets/redeem`,
+Phase 7 就已实现测过)对应的 admin 页面——**零后端改动**,复用已有接口原样
+调用,请求体格式、成功/失败响应结构先对着现有实现和集成测试核实过一遍才
+动手。跟下面「影院/影厅管理」是同一天交付的两个独立功能,分两次提交,这里
+只记录电子票核销自己的决定。
+
+- **失败态区分三种情况,不是一句模糊错误覆盖**:400(签名/格式不对,
+  `InvalidTicketCodeException`)和 409(签名是真的,但 booking 当前不能被
+  核销)在视觉和标题上都不同——400 走红色 `CircleX`,标题"Invalid Ticket
+  Code";409 走已经验证过的琥珀 warning 色调(`--chart-amber-*`,同
+  `StatTile`/`ScheduleShowtimesNudge`),标题"Cannot Redeem This Ticket"。
+  409 背后其实是两个不同的后端异常(`TicketAlreadyRedeemedException` /
+  `BookingNotConfirmedException`),只在消息文本上不同,状态码和响应体里
+  都没有更细的判别字段——没有尝试用字符串匹配拆出第四种更具体的标题(这个
+  项目一贯反对从错误字符串里解析结构化数据,参考 Phase 5 座位冲突处理的
+  先例),两条消息本身都已经是完整清楚的句子,原样展示。E2E 脚本验证过这
+  两条消息文本确实不同("Ticket was already redeemed at ..." vs "Booking
+  is EXPIRED, not CONFIRMED — cannot be redeemed"),不是巧合相同、也不是
+  没测到区别就假设有区别。
+- **表单提交后无论成功失败都清空输入框并重新聚焦**:这是一个"扫码/输入 →
+  看结果 → 扫下一张"的连续核销流程(扫码枪当键盘输入 + 回车,或工作人员
+  手动输入),不是需要反复修改重提交的表单;上一次尝试的结果留在下方结果
+  面板里,不会因为清空输入框而丢失。
+- 图标选用 `CircleX`/`CircleCheck`(不是 `XCircle`/`CheckCircle`)——这个
+  项目当前的 lucide-react(1.28)两个名字都存在,但后者是 deprecated 别名
+  (`x-circle.mjs` 内容就是 `export { default } from './circle-x.mjs'`),
+  这个项目已有代码(`AnimatedFormBanner`)用的是前者,跟随既有约定,不是
+  训练数据里更熟悉的旧名字。
+
+**验证**:真实浏览器不可用(这次会话没有 Playwright 之类的工具),延续
+"Admin 电影编辑页:排场次引导卡片"那次的验证方式——写了一个 Node 脚本
+(`e2e-verify.mjs`),对着真实跑着的 Postgres/Redis/后端跑完整核销流程:
+自建一笔测试订单(引用一部已有种子电影排一场自建的测试场次,不碰种子数据
+本身)、直接改库把它标记 CONFIRMED(绕过 Stripe——这个任务验证的是核销
+本身,不是 Phase 6 已经有自己集成测试覆盖的支付流程)拿到真实签发的票据
+编码,验证核销成功、二次核销 409、伪造编码 400,以及"booking 签名是真的
+但已不是 CONFIRMED"这第四种场景(409,消息文本和"已核销过"那条确实不同,
+不是巧合相同)。跑完立刻清理并核对清理后计数为 0。`npm run build`/
+`npm run lint` 干净。没有验证的:真实浏览器里的像素级渲染/交互。
+
+### 影院/影厅管理 `/admin/cinemas`(2026-08-15)
+
+补上此前只能靠 curl/Swagger 操作的分店/影厅浏览+创建能力(`POST /cinemas`、
+`POST /cinemas/{id}/halls`,Phase 3 就已实现测过)对应的 admin 页面——同样
+**零后端改动**。跟上面「电子票核销」是同一天交付的两个独立功能,分两次
+提交,这里只记录影院管理自己的决定。
+
+- **座位类型分布(STANDARD/COUPLE 各多少个)来自真实的
+  `GET /halls/{id}/seats` 逐条统计,不是在前端按 totalRows/totalColumns
+  重新实现一遍 `SeatLayoutGenerator` 的生成规则**——后者等于把后端的业务
+  规则(最后一排是情侣座、每 2 列配对,奇数列时落单座退化成 STANDARD)复制
+  一份到前端维护两份,一旦后端算法以后变了(哪怕只影响新建的影厅),这份
+  前端复制会对老影厅的真实数据默默算出错误答案。影厅数量在 MVP 量级下
+  (个位数)多几次这样的只读 GET 请求可以接受,跟这个项目一贯的"小规模
+  场景下 N+1 可接受"取舍一致(如 `admin/showtimes/new` 的电影下拉、
+  `admin/cinemas` 列表页本身统计每个分店的影厅数量)。
+- **没有单一 cinema 的 GET 接口**(`CinemaController` 只有 `list()` 和
+  按 cinema 分组的 `listHalls`),分店详情页 `/admin/cinemas/[id]` 因此
+  拉全量 `listCinemas()` 后在前端按 id 过滤——跟 `admin/showtimes/new`
+  按状态过滤电影下拉是同一个"拉全量、前端过滤"模式,不是这次新发明的。
+- **`listCinemas`/`listHalls` 从 `admin-showtimes.ts` 挪到新建的
+  `admin-cinemas.ts`**:这两个函数最初是为了给场次表单的影厅下拉框提供
+  数据,顺手加在了 `admin-showtimes.ts` 里;这次影院管理成为一个完整功能
+  后,它们真正的归属域是"cinemas"不是"showtimes",挪过去之后
+  `admin/showtimes/new/page.tsx` 改成从新文件 import,行为完全不变。
+- **警示文案如实反映当前系统能力,没有照抄 Phase 3 原文的"删除重建"说法**
+  ——`CinemaController`/`HallController` 目前完全没有任何 delete 端点
+  (grep 确认过,不是遗漏),所以创建影厅表单里的提示写的是"座位布局无法
+  修改,且这个系统目前没有删除影厅的方式,创建前请仔细核对行列数",不是
+  "删除重建"——后者在 Phase 3 文档里是概念性描述,不代表这个操作在 API
+  层面真的存在;把一个不存在的能力写进 admin 提示文案,踩坑的还是 admin。
+
+**验证**:同样用真实跑着的 Postgres/Redis/后端 + 自建自清理的数据(见上面
+「电子票核销」的验证记录——两个功能的验证跑在同一个 `e2e-verify.mjs`
+脚本里,一共 31 项断言全部通过):创建测试分店/影厅、核对它们出现在
+`GET /cinemas`、`GET /cinemas/{id}/halls` 的返回里、核对
+`GET /halls/{id}/seats` 逐条统计出的 STANDARD/COUPLE 数量正好等于 3 行
+4 列布局按 `SeatLayoutGenerator` 规则应得的 8 + 2(验证的正是上面第一条
+决定里提到的"不在前端重新实现这份规则、只信任真实返回数据"这个选择本身
+是对的)。跑完立刻清理并核对清理后计数为 0。`npm run build`/`npm run
+lint` 干净。没有验证的:真实浏览器里的像素级渲染/交互。
 
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分

@@ -225,7 +225,7 @@ CineVerse/
     └── src/
         ├── app/
         │   ├── (customer)/    # Customer route group: /, /login, /register, /profile, /showtimes/[id](/seats), /bookings(/[id]/confirmed)
-        │   └── admin/         # Admin backend (independent nav shell + role check): /admin/dashboard, /admin/movies(/new, /[id]/edit), /admin/showtimes(/new), /admin/users
+        │   └── admin/         # Admin backend (independent nav shell + role check): /admin/dashboard, /admin/movies(/new, /[id]/edit), /admin/cinemas(/[id]), /admin/showtimes(/new), /admin/tickets/redeem, /admin/users
         ├── components/        # ui (shadcn) / auth / layout / motion / booking / admin
         ├── lib/                # API client, auth context, zod schemas
         └── proxy.ts           # Route protection (Next 16: middleware renamed to proxy)
