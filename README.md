@@ -10,13 +10,11 @@
 
 An online cinema seat booking system: browse now-playing/coming-soon movies →
 pick a showtime → select seats in real time on a live seat map → pay with
-Stripe → get a QR-code e-ticket the moment payment succeeds. Admins can manage
-movies, showtimes, and user accounts, and view sales/occupancy reports.
-Cinema/hall data is fully modeled in the backend, but there is currently no
-admin UI for it — the layout was intentionally frozen at MVP scope (see Phase
-3 in `CLAUDE.md`). Frontend and backend are fully decoupled (Next.js + Spring
-Boot), backed by PostgreSQL, with Redis handling seat-selection concurrency
-locking.
+Stripe → get a QR-code e-ticket the moment payment succeeds. Admins manage
+movies, cinema/hall layouts, and showtimes, handle user accounts and
+customer-support order lookups, and view sales/occupancy reports. Frontend
+and backend are fully decoupled (Next.js + Spring Boot), backed by
+PostgreSQL, with Redis handling seat-selection concurrency locking.
 
 **This is a job-search portfolio project.** The goal is to demonstrate
 full-stack engineering ability — concurrency handling, payment idempotency,
@@ -54,9 +52,23 @@ open decision (see Section 4 in `CLAUDE.md`); no link is faked here.
   that stops at "simulate success."
 - **E-tickets with check-in redemption** — a signed QR-code e-ticket is issued
   the moment payment succeeds, scannable at the door; redeeming the same
-  ticket twice is rejected.
+  ticket twice is rejected. Staff redeem through a dedicated admin check-in
+  screen that tells apart a malformed/forged code (400) from a valid code
+  that just can't be redeemed right now — already used, or the booking isn't
+  in a confirmed state (409) — instead of one generic failure message.
 - **Admin reporting dashboard** — sales reports (daily/weekly/monthly) and
   occupancy analysis, with CSV/PDF export.
+- **Customer-support order lookup** — admins can find a customer's booking by
+  email, movie title, or status without already knowing its ID, open the
+  full order detail, and cancel an unpaid (PENDING) booking on the
+  customer's behalf — the same cancellation logic and seat-release path a
+  customer's own cancellation uses, not a separate admin-only shortcut.
+- **Payment reconciliation visibility** — a Stripe payment can succeed after
+  its booking's seat hold has already expired and the seat's gone to someone
+  else; that money is tracked as a distinct, flagged state instead of being
+  silently lost or wrongly auto-confirmed onto the wrong order. Admins have a
+  dedicated screen listing exactly which payments are in that state, not
+  just an aggregate dollar figure on a report.
 - **Liquid Glass visual design** — glassmorphic cards with a pointer-following
   highlight, paired with smooth page transitions and micro-interactions.
 
@@ -165,9 +177,12 @@ the design actually solves:
 - **Phase 8** — Admin dashboard & reporting (sales/occupancy reports,
   CSV/PDF export) — ✅ complete
 
-The Phase-based roadmap above concluded with Phase 8. Admin UIs for user
-management, movie management, and showtime scheduling shipped afterward as
-separate, dated iterative deliveries (2026-08-11 through 2026-08-14) rather
+The Phase-based roadmap above concluded with Phase 8. Everything admin-facing
+beyond the Phase 8 reporting dashboard — user management, movie management,
+cinema/hall management, showtime scheduling, ticket redemption,
+customer-support order lookup, payment reconciliation visibility, admin
+search, and the sidebar navigation shell itself — shipped afterward as
+separate, dated iterative deliveries (2026-08-11 through 2026-08-16) rather
 than as part of Phase 8 itself — see the corresponding dated entries in
 [`CLAUDE.md`](./CLAUDE.md) for each.
 
@@ -192,11 +207,16 @@ Full architectural decisions and rationale for each Phase live in
   ecosystem, not whether this specific deployment can receive a patch today.
   Full research and trade-off record in
   [`docs/DECISIONS.md`](./docs/DECISIONS.md).
-- **Cinema/hall management has no admin UI.** The backend supports creating
-  cinemas and halls (with automatic seat generation), but there's
-  intentionally no update/delete API — Phase 3 froze this as a fixed MVP
-  scope (1 cinema, 3 halls). Changing a layout means deleting and recreating
-  the hall.
+- **Cinema/hall layouts are create-only, with no way to change or remove them
+  afterward.** The admin UI (`/admin/cinemas`) can create cinemas/halls (seat
+  grid auto-generated from row/column counts) and browse existing ones,
+  which is the full extent of what the backend API supports — there's no
+  update/delete endpoint for either, not even one the UI simply doesn't
+  expose. A layout mistake means going around the app (direct database
+  access) to fix, not "delete and recreate" through some hidden admin
+  action. This is a deliberate Phase 3 MVP boundary (1 cinema, 3 halls), and
+  the create-hall form says so plainly rather than leaving admins to
+  discover it the hard way.
 - **Malaysian LPF content ratings aren't mapped** — `content_rating` currently
   stores MPAA-style values (e.g., "PG-13") sourced from OMDb/TMDB, not the
   local LPF classification system. This is a known, deliberately deferred
@@ -225,7 +245,7 @@ CineVerse/
     └── src/
         ├── app/
         │   ├── (customer)/    # Customer route group: /, /login, /register, /profile, /showtimes/[id](/seats), /bookings(/[id]/confirmed)
-        │   └── admin/         # Admin backend (independent nav shell + role check): /admin/dashboard, /admin/movies(/new, /[id]/edit), /admin/cinemas(/[id]), /admin/showtimes(/new), /admin/bookings(/[id]), /admin/tickets/redeem, /admin/users, /admin/payments (not in top nav — linked from the dashboard's Pending Reconciliation stat)
+        │   └── admin/         # Admin backend (independent sidebar nav + role check): /admin/dashboard, /admin/movies(/new, /[id]/edit), /admin/cinemas(/[id]), /admin/showtimes(/new), /admin/bookings(/[id]), /admin/tickets/redeem, /admin/users, /admin/payments (not in the sidebar — linked from the dashboard's Pending Reconciliation stat)
         ├── components/        # ui (shadcn) / auth / layout / motion / booking / admin
         ├── lib/                # API client, auth context, zod schemas
         └── proxy.ts           # Route protection (Next 16: middleware renamed to proxy)
