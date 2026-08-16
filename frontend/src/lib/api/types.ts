@@ -294,6 +294,14 @@ export interface CheckoutSessionResponse {
   checkoutUrl: string;
 }
 
+/** One row of GET /api/v1/admin/bookings — wraps the same BookingResponse the
+ * customer-facing endpoints return, plus the one field only admin search needs
+ * and neither of those callers has any use for. */
+export interface AdminBookingSearchResult {
+  userEmail: string;
+  booking: BookingResponse;
+}
+
 // ---- Ticket redemption (admin check-in UI) ----
 
 export interface RedeemTicketRequest {
