@@ -26,4 +26,24 @@ public final class MovieSpecifications {
             return cb.equal(genres.get("id"), genreId);
         };
     }
+
+    /**
+     * Case-insensitive "contains" match on title. Built with
+     * {@code CriteriaBuilder.like}/{@code lower} rather than a hand-written
+     * JPQL string — the Criteria API binds the pattern as a single,
+     * unambiguously-typed parameter, which is exactly the class of thing
+     * that broke on Postgres for {@code lower(concat('%', ?, '%'))} in raw
+     * JPQL (see BookingRepository.search's doc comment for the full story);
+     * Specifications were never at risk of that bug, not because of any
+     * special care taken here, but because Criteria API expressions carry
+     * their Java type through to the bind parameter by construction.
+     */
+    public static Specification<Movie> hasTitleContaining(String title) {
+        return (root, query, cb) -> {
+            if (title == null || title.isBlank()) {
+                return null;
+            }
+            return cb.like(cb.lower(root.get("title")), "%" + title.trim().toLowerCase() + "%");
+        };
+    }
 }

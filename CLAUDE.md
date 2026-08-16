@@ -1860,12 +1860,79 @@ Stripe webhook 处理内部触发,`PaymentFlowIntegrationTest` 已经完整覆�
 `bookedSeats` 计数是同一个已验证过的先例,不是这次新发明的。
 
 **验证**:见下面「Admin 列表页搜索」一节的验证记录——这次两个独立功能
-的验证跑在同一个 Node 脚本里,一共 21 项断言(含下面还没写进本节、
-但同一批交付的列表页搜索功能的验证),全部通过,清理后核对计数为 0。
-跑完立刻按端口号找 PID kill 掉 8082 临时实例(`mvn spring-boot:run`
-fork 出的子 `java` 进程不会随包着它的 shell 任务一起停止,这一步和
-上一批一样需要手动做),全程 8081 保持未受影响(验证前后分别 curl
-确认过)。`npm run build`/`npm run lint` 干净。
+的验证跑在同一个 Node 脚本里。
+
+### Admin 列表页搜索:电影 + 用户(2026-08-16)
+
+`admin/movies` 和 `admin/users` 两个列表页此前只有分页,没有任何搜索/
+筛选入口——找一部电影或一个用户只能翻页。这次补上,零 UI 结构改动之外
+的新增(复用已有的列表+分页+确认弹窗骨架,只加了一个搜索框)。
+
+**后端**:
+
+- `GET /api/v1/movies` 新增可选的 `title` 参数(大小写不敏感模糊匹配)。
+  这是**公开**接口(顾客端首页也在用同一个接口),新增一个不传就没有
+  任何影响的可选参数对现有顾客端调用完全无感——和 `status`/`genre`
+  两个既有的可选筛选参数是同一个约定,不是这次破例开的先例。
+  实现是给已有的 `MovieSpecifications`(`hasStatus`/`hasGenre`)加一个
+  `hasTitleContaining`,复用 `MovieService.list()` 里已经在用的
+  `Specification.where(...).and(...)` 组合方式,不是引入新的查询机制。
+- `GET /api/v1/admin/users` 新增可选的 `email` 参数(大小写不敏感模糊
+  匹配)。`UserRepository` 之前完全没有任何筛选基建(`AdminUserService
+  .getAllUsers` 就是裸的 `findAll(pageable)`),这次**没有**照抄 movies
+  那套 `Specification` 组合方式,而是加了一个 Spring Data 派生查询方法
+  `findByEmailContainingIgnoreCase`——用户这边从始至终只需要一个筛选
+  维度,为一个维度专门引入 Specification 基建是不成比例的过度设计
+  (movies 那边引入 Specification 是因为它已经有 status+genre 两个维度
+  在用,这次只是往已有的组合链上再加一环)。`AdminUserService
+  .getAllUsers(String email, Pageable pageable)` 在 email 为空时直接走
+  `findAll`,不强行统一成"永远走 Specification"的单一形状。
+- **两种实现都不会撞上上一批发现的 `lower(concat(...))` Postgres 类型
+  推断坑**,但原因不同、也不是巧合:`MovieSpecifications.hasTitleContaining`
+  用 `CriteriaBuilder.like`/`lower` 构造,Criteria API 表达式在编译期就
+  携带了 Java 类型信息,绑定参数时不存在"占位符只出现在字符串函数调用
+  里、类型推断不出来"这个问题的产生条件;`findByEmailContainingIgnoreCase`
+  是 Spring Data 派生查询方法,底层同样走 Criteria API,不是手写 JPQL
+  字符串拼出来的。也就是说这次没有专门"规避"什么,而是两种机制从
+  实现原理上就不在那个坑的影响范围内——真正在影响范围内的只有"手写
+  JPQL 里对占位符调用 `lower()`/`concat()`"这一种具体写法,`BookingRepository
+  .search` 当时正好用了这种写法,这次两个新查询都没有。
+
+**前端**:
+
+- 两个页面都是"输入 + 点搜索/回车提交",不是打字实时搜索——延续 TMDB
+  搜索选择器和上一批 `admin/bookings` 搜索表单已经定下的约定(一次
+  明确的搜索动作对应一次请求,不是每个按键都发请求)。
+- `loading` 的推导从"当前持有的数据是否匹配 `page`"扩展成"是否同时
+  匹配 `page` 和当前生效的搜索词"——两个页面原来的 `moviesPage`/
+  `usersPage` 状态因此都换成了和 `admin/bookings`/`admin/payments`
+  相同的"结果连同请求它时的参数一起持有"的包装形状,不然一次搜索词
+  变化会被漏判成"数据仍然有效",短暂展示上一个搜索词的结果。
+  `requestIdRef` 防竞态模式两个页面都已经有,原样复用。
+
+**测试**:新增的测试方法直接加进已有的 `MovieAdminFlowIntegrationTest`/
+`AdminUserFlowIntegrationTest`,不是另开新文件——这两个接口本来就有
+测试覆盖,搜索只是这两个接口新增的一种查询维度,不是一个独立的新
+接口。`mvn -o clean test` 全量跑过,182/182 全绿(174 + 上面 payments
+的 6 个 + 这次的 2 个)。
+
+**验证**:这次两个功能都涉及真实后端代码改动,和"Admin 支付异常只读
+列表"是同一批交付、同一个风险级别——延续上一次的判断(8081 端口预先
+跑着的是这次改动之前编译的旧代码,又不确定这个长期运行的实例是否还有
+人在用),没有碰它,而是在 8082 端口另起一个用当前分支代码编译的临时
+实例,指向同一套 Postgres/Redis。一个 Node 脚本里覆盖两个功能:电影
+标题模糊搜索(命中 + 不命中)、用户邮箱模糊搜索(命中 + 不命中)、
+自建一部电影+一场场次+一个顾客+一笔订单后直接改库(`UPDATE bookings
+SET status='EXPIRED'` + 手写 `INSERT INTO payments ... status=
+'ORPHANED_SUCCESS'`——`payments` 表的 `created_at`/`updated_at` 在
+migration 里本来就有 `DEFAULT now()`,不需要在 INSERT 里显式给值)
+构造一条真实的 `ORPHANED_SUCCESS` 记录,验证它能被 `/admin/payments`
+搜到且字段正确、搜索其他状态时不出现、401/403 权限门禁——21 项断言
+全部通过,清理后核对计数为 0。跑完立刻按端口号找 PID kill 掉临时
+实例(`mvn spring-boot:run` fork 出的子 `java` 进程不会随包着它的
+shell 任务一起停止,这一步和上一批一样需要手动做),全程 8081 保持
+未受影响(验证前后分别 curl 确认过)。`npm run build`/`npm run lint`
+干净。
 
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分

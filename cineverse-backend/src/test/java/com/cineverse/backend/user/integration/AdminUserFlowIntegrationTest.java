@@ -116,6 +116,35 @@ class AdminUserFlowIntegrationTest {
                 .andExpect(status().isNoContent());
     }
 
+    @Test
+    void emailSearchIsCaseInsensitiveAndScopedToMatchingUsers() throws Exception {
+        String adminToken = loginAsAdmin();
+        String uniqueEmail = "zzyzx-email-search-" + UUID.randomUUID() + "@cineverse.local";
+        registerCustomerWithEmail(uniqueEmail);
+        registerCustomer(); // an unrelated user in the same run
+
+        mockMvc.perform(get("/api/v1/admin/users")
+                        .param("email", uniqueEmail.substring(0, 20).toUpperCase())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.email=='" + uniqueEmail + "')]").exists())
+                .andExpect(jsonPath("$.content.length()").value(1));
+
+        mockMvc.perform(get("/api/v1/admin/users")
+                        .param("email", "an email fragment that matches nothing " + UUID.randomUUID())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isEmpty());
+    }
+
+    private void registerCustomerWithEmail(String email) throws Exception {
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new RegisterRequest(email, "Sup3rSecret!", "Admin Search Test Customer"))))
+                .andExpect(status().isCreated());
+    }
+
     private String loginAsAdmin() throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import { Search } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { getAdminUsers, updateUserRole, deleteUser } from "@/lib/api/admin-users";
 import type { Page, UserResponse } from "@/lib/api/types";
@@ -8,16 +9,22 @@ import { ApiError } from "@/lib/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 
 export default function AdminUsersPage() {
   const { callAuthorized, user: currentUser } = useAuth();
-  const [usersPage, setUsersPage] = useState<Page<UserResponse> | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [emailInput, setEmailInput] = useState("");
+  const [appliedEmail, setAppliedEmail] = useState("");
   const [page, setPage] = useState(0);
-  
-  // Loading derived from data state, matching dashboard/page.tsx pattern
-  // This avoids set-state-in-effect issues and stale-data flashes.
-  const loading = !usersPage || usersPage.number !== page;
+
+  // Loading derived from data state, matching dashboard/page.tsx pattern —
+  // extended to also track the search term that produced the data on hand,
+  // same reasoning as admin/movies/page.tsx's title search.
+  const [result, setResult] = useState<{ page: number; email: string; data: Page<UserResponse> } | null>(null);
+  const loading = !result || result.page !== page || result.email !== appliedEmail;
+
+  const [error, setError] = useState<string | null>(null);
 
   // Dialog states
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -39,18 +46,25 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     const thisRequestId = ++requestIdRef.current;
-    callAuthorized((token) => getAdminUsers(token, page))
+    callAuthorized((token) => getAdminUsers(token, page, 20, appliedEmail || undefined))
       .then((data) => {
         if (requestIdRef.current !== thisRequestId) return;
-        setUsersPage(data);
+        setResult({ page, email: appliedEmail, data });
         setError(null);
       })
       .catch(() => {
         if (requestIdRef.current !== thisRequestId) return;
-        setUsersPage(null);
         setError("Failed to load users");
       });
-  }, [callAuthorized, page]);
+  }, [callAuthorized, page, appliedEmail]);
+
+  // Explicit submit, not live-as-you-type — same convention as
+  // admin/movies' title search and admin/bookings' search form.
+  function handleSearchSubmit(event: FormEvent) {
+    event.preventDefault();
+    setPage(0);
+    setAppliedEmail(emailInput.trim());
+  }
 
   const handleRoleToggle = (user: UserResponse) => {
     const newRole = user.role === "ADMIN" ? "CUSTOMER" : "ADMIN";
@@ -61,11 +75,14 @@ export default function AdminUsersPage() {
       action: async () => {
         try {
           await callAuthorized((token) => updateUserRole(token, user.id, { role: newRole }));
-          setUsersPage((prev) => {
+          setResult((prev) => {
             if (!prev) return prev;
             return {
               ...prev,
-              content: prev.content.map((u) => (u.id === user.id ? { ...u, role: newRole } : u)),
+              data: {
+                ...prev.data,
+                content: prev.data.content.map((u) => (u.id === user.id ? { ...u, role: newRole } : u)),
+              },
             };
           });
           closeDialog();
@@ -84,11 +101,11 @@ export default function AdminUsersPage() {
       action: async () => {
         try {
           await callAuthorized((token) => deleteUser(token, user.id));
-          setUsersPage((prev) => {
+          setResult((prev) => {
             if (!prev) return prev;
             return {
               ...prev,
-              content: prev.content.filter((u) => u.id !== user.id),
+              data: { ...prev.data, content: prev.data.content.filter((u) => u.id !== user.id) },
             };
           });
           closeDialog();
@@ -115,6 +132,22 @@ export default function AdminUsersPage() {
         <p className="mt-1 text-sm text-muted-foreground">Manage platform users and permissions</p>
       </header>
 
+      <form onSubmit={handleSearchSubmit} className="mb-6 flex max-w-sm items-end gap-2">
+        <Field className="flex-1">
+          <FieldLabel htmlFor="userEmailSearch">Search by email</FieldLabel>
+          <Input
+            id="userEmailSearch"
+            placeholder="fan@example.com"
+            value={emailInput}
+            onChange={(event) => setEmailInput(event.target.value)}
+          />
+        </Field>
+        <Button type="submit" variant="outline" className="h-11">
+          <Search className="size-4" aria-hidden />
+          Search
+        </Button>
+      </form>
+
       {error && (
         <div role="alert" className="mb-6 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
           {error}
@@ -128,8 +161,10 @@ export default function AdminUsersPage() {
         <CardContent>
           {loading ? (
             <div className="py-8 text-center text-sm text-muted-foreground">Loading...</div>
-          ) : !usersPage || usersPage.content.length === 0 ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">No users yet</div>
+          ) : result.data.content.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              {appliedEmail ? `No users match "${appliedEmail}"` : "No users yet"}
+            </div>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="w-full text-sm">
@@ -144,7 +179,7 @@ export default function AdminUsersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {usersPage.content.map((user) => (
+                  {result.data.content.map((user) => (
                     <tr key={user.id} className="border-b border-border last:border-0">
                       <td className="px-3 py-2 text-foreground">{user.email}</td>
                       <td className="px-3 py-2 text-foreground">{user.fullName || "-"}</td>
@@ -184,17 +219,17 @@ export default function AdminUsersPage() {
           )}
 
           {/* Pagination controls */}
-          {usersPage && usersPage.totalPages > 1 && (
+          {result && result.data.totalPages > 1 && (
             <div className="mt-4 flex items-center justify-between">
               <p className="text-sm text-muted-foreground">
-                {usersPage.totalElements} total, page {usersPage.number + 1} of {usersPage.totalPages}
+                {result.data.totalElements} total, page {result.data.number + 1} of {result.data.totalPages}
               </p>
               <div className="flex gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={usersPage.first || loading}
+                  disabled={result.data.first || loading}
                   onClick={() => setPage((p) => Math.max(0, p - 1))}
                 >
                   Previous
@@ -203,7 +238,7 @@ export default function AdminUsersPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={usersPage.last || loading}
+                  disabled={result.data.last || loading}
                   onClick={() => setPage((p) => p + 1)}
                 >
                   Next

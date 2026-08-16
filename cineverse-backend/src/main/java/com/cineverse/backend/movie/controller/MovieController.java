@@ -41,12 +41,14 @@ public class MovieController {
     }
 
     @GetMapping
-    @Operation(summary = "分页查询电影", description = "公开接口,无需登录;支持按 status、genre 筛选")
+    @Operation(summary = "分页查询电影", description = "公开接口,无需登录;支持按 status、genre 筛选,"
+            + "以及按 title 模糊搜索(大小写不敏感)")
     public Page<MovieResponse> list(
             @RequestParam(required = false) MovieStatus status,
             @RequestParam(required = false) UUID genre,
+            @RequestParam(required = false) String title,
             @PageableDefault(size = 20) Pageable pageable) {
-        return movieService.list(status, genre, pageable);
+        return movieService.list(status, genre, title, pageable);
     }
 
     @GetMapping("/{id}")
