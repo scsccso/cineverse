@@ -1795,6 +1795,78 @@ run` 会 fork 一个独立的 `java` 子进程,单纯停掉包着它的 shell �
 连带杀死子进程,是额外按端口号找 PID 确认后才 kill 掉的,全程没有碰
 8081 那个实例(验证前后分别 curl 确认过它仍然是 200)。
 
+### Admin 支付异常(ORPHANED_SUCCESS)只读列表 `/admin/payments`(2026-08-16)
+
+补上 Phase 8 销售报表留下的一个缺口:`pendingReconciliationAmount` 从一开始
+就只是一个汇总金额(见 CLAUDE.md Phase 8),没有任何接口能看到具体是哪几条
+`payments` 记录、金额多少、对应哪个用户/场次/订单——人工对账的第一步("找到
+是哪几笔")在这之前其实做不到。这次只补这一步,不涉及退款或任何状态修改,
+`ORPHANED_SUCCESS` 之后"要不要退款/怎么处理"仍然是运营层面的人工流程,
+CLAUDE.md Phase 6 早就定过这个边界,这次没有动它。
+
+**新增 API**:
+
+- `GET /api/v1/admin/payments?status=&page=&size=`(仅 ADMIN,只读):
+  `status` 可选,不传则分页浏览全部状态,和 `GET /api/v1/admin/users`
+  "无过滤条件退化成全表分页浏览"是同一个形状。每条记录带完整的关联信息
+  (用户邮箱、电影标题、影厅、场次时间、booking 状态)——全部从
+  `payments` 表已有的外键关联(`booking_id` → `bookings.user_id`/
+  `bookings.showtime_id` → `showtimes.movie_id`/`hall_id`)查出,没有新增
+  任何字段或迁移。
+- 响应形状是新建的 `AdminPaymentResponse`(内嵌一个 `BookingSummary`),
+  不是往任何已有的顾客端 DTO 上加字段——这个项目目前没有独立的
+  `PaymentResponse`(顾客端从来不需要直接看到 payment 记录,只通过
+  booking 的 `ticketCode`/`redeemedAt` 间接感知支付结果),所以这次是
+  从零设计,不存在"该不该复用"的选择,和上一批 `AdminBookingSearchResult`
+  刻意不往共享的 `BookingResponse` 上加 `userEmail` 字段是同一个原则的
+  自然延伸,不是巧合。
+- `AdminPaymentMapper` 是普通的命令式 `@Component`,不是 MapStruct——
+  和 `BookingMapper` 同样的理由:这次的映射要跨 5 层关联
+  (`payment → booking → user`/`showtime → movie`/`hall`)组装成一个
+  嵌套 record,读起来更像命令式装配而不是声明式字段映射,而且这个项目
+  已经在 MapStruct 生成代码上踩过一次坑(见"Admin 用户管理"),显式方法体
+  比隐式推断更值得信任这条经验这次继续适用。
+- **`status` 参数是普通枚举相等比较,不是 `LIKE` 模糊匹配,所以完全不会
+  撞上上一批发现的 Postgres 参数类型推断问题**(`lower(concat('%', ?,
+  '%'))` 在 Postgres extended query protocol 下对纯粹只出现在字符串函数
+  调用里的占位符推断不出类型)——那个坑的根源是"占位符只出现在
+  `lower()`/`concat()` 内部",一个从比较运算符本身就能明确类型的枚举
+  参数从一开始就不在受影响的范围内,这里不需要、也没有做任何特殊处理。
+
+**信息架构决定:没有加进 `AdminHeader` 顶部导航**——这是一个偶尔查阅的
+运维页面,不是 Movies/Bookings/Users 那种日常主工作流,7 个顶部导航项
+已经不算少,再加一个不常用的入口只会稀释其余项的可发现性。改为:
+`StatTile` 新增可选的 `href` 属性(不传时行为和之前完全一样,一个纯
+展示的 `div`;传了则整个卡片变成 `<Link>`,末尾加一行"View details →"
+提示可点击),仪表盘销售报表里"Pending Reconciliation"那张卡片链接到
+`/admin/payments?status=ORPHANED_SUCCESS`——这个数字本身就是这个新页面
+存在的理由,从数字本身点进明细,比在顶部导航里翻找一个不常用的入口更
+符合这个页面实际会被用到的场景(先在报表上注意到这个数字不是 0,再想
+知道具体是哪几笔)。页面本身仍然是一个完整的、可收藏/可直接访问的独立
+URL(不是嵌进仪表盘页面的一个子区块),因为报表页已经塞了两张图表 +
+两张数据表,再挤进一张可能有很多行的明细表会让那个页面本身变得拥挤。
+
+**测试**:`AdminPaymentServiceTest`(Mockito,验证嵌套 `BookingSummary`
+的五层组装、状态过滤透传)+ `AdminPaymentFlowIntegrationTest`
+(Testcontainers Postgres+Redis:401/403、status 过滤、字段正确性)。
+没有任何 API 路径能产生一条 `ORPHANED_SUCCESS` 记录(这个状态只在真实
+Stripe webhook 处理内部触发,`PaymentFlowIntegrationTest` 已经完整覆盖
+那条转换路径本身)——集成测试的 fixture 因此是直接 autowire
+`BookingRepository`/`PaymentRepository` 构造,调用和真实 webhook 路径
+同样的实体方法(`booking.markExpired()`、`payment.markOrphanedSuccess()`),
+不重新驱动一遍完整的 Stripe checkout,这个"构造终态而不是重新走一遍
+产生终态的流程"的取巧方式,和上一批 `ShowtimeAdminFlowIntegrationTest`
+用 autowired repository 直接构造 CONFIRMED/PENDING booking 测
+`bookedSeats` 计数是同一个已验证过的先例,不是这次新发明的。
+
+**验证**:见下面「Admin 列表页搜索」一节的验证记录——这次两个独立功能
+的验证跑在同一个 Node 脚本里,一共 21 项断言(含下面还没写进本节、
+但同一批交付的列表页搜索功能的验证),全部通过,清理后核对计数为 0。
+跑完立刻按端口号找 PID kill 掉 8082 临时实例(`mvn spring-boot:run`
+fork 出的子 `java` 进程不会随包着它的 shell 任务一起停止,这一步和
+上一批一样需要手动做),全程 8081 保持未受影响(验证前后分别 curl
+确认过)。`npm run build`/`npm run lint` 干净。
+
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
 - 评价评分

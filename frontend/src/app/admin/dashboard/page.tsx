@@ -154,6 +154,7 @@ export default function AdminDashboardPage() {
                     value={formatCurrency(sales.pendingReconciliationAmount, sales.currency)}
                     hint="Stripe reported a successful payment that isn't counted in revenue — needs manual reconciliation"
                     tone={sales.pendingReconciliationAmount > 0 ? "warning" : "default"}
+                    href="/admin/payments?status=ORPHANED_SUCCESS"
                   />
                 </div>
                 <SalesChart buckets={sales.buckets} currency={sales.currency} />

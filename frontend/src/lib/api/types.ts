@@ -374,3 +374,29 @@ export interface OccupancyReportResponse {
   totalBookedSeats: number;
   overallOccupancyRate: number;
 }
+
+// ---- Admin payments (manual-reconciliation drill-down) ----
+
+export type PaymentStatus = "PENDING" | "SUCCEEDED" | "FAILED" | "ORPHANED_SUCCESS";
+
+/** One row of GET /api/v1/admin/payments — the specific-rows drill-down behind
+ * SalesReportResponse.pendingReconciliationAmount's single summed figure. */
+export interface AdminPaymentResponse {
+  id: string;
+  status: PaymentStatus;
+  amount: number;
+  currency: string;
+  stripeSessionId: string;
+  stripePaymentIntentId: string | null;
+  createdAt: string;
+  /** For a terminal status, the moment it became that. */
+  updatedAt: string;
+  booking: {
+    id: string;
+    status: BookingStatus;
+    userEmail: string;
+    movieTitle: string;
+    hallName: string;
+    showtimeStartTime: string;
+  };
+}
