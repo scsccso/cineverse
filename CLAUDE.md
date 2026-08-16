@@ -2043,6 +2043,56 @@ scrollWidth: 610, isScrollingInternally: true`(容器正确收缩到可用
 完整改动文件清单、`AdminSidebar` 组件结构见对应源文件注释,不在这里
 重复。
 
+### 日期格式化 locale 遗留:zh-CN 硬编码修复(2026-08-16)
+
+三批"翻译成英文"的审计(i18n batch 1/2/3,分别覆盖客户端页面/组件、
+admin 页面/组件)都是按可见 UI 文本做的审计,遗漏了一类不会被这种审计
+方式抓到的内容:**运行时拼接生成的格式化输出**,不是写死在 JSX 里的
+字符串字面量。这次是在 README 截图核实环节偶然发现的——选座页/电子票
+页的日期显示成了"9月15日周二"这样的中文格式,而页面其余所有文字都是
+英文。
+
+排查(按要求先 grep 整个 `frontend/src` 确认全部受影响位置,不是改一个
+地方就假设完事)发现三处,不是一处:
+
+- **`lib/format.ts` 的 `formatShowDate`/`formatShowTime`**——两个函数都
+  硬编码 `Intl.DateTimeFormat("zh-CN", ...)`。这是被复用最广的一处:
+  选座页头部、电子票页、admin 占用率图表的 x 轴标签等,所有显示场次
+  日期/时间的地方都经过这两个函数。
+- **`app/layout.tsx` 根 `<html lang="zh-CN">`**——文档级别的语言声明,
+  影响屏幕阅读器/浏览器翻译提示/拼写检查,不是页面可见文本,字符串
+  扫描 UI 文案不会碰到这一行。
+- **`app/admin/users/page.tsx` 的 `user.createdAt` 那一列,调用
+  `toLocaleDateString()` 时完全没传 locale 参数**——这一条比前两条更
+  隐蔽:不是硬编码 `zh-CN`,而是跟随浏览器/运行环境的默认 locale,这次
+  截图会话验证时才发现这个环境的默认 locale 恰好是中文——换一台机器/
+  换一个浏览器配置,这一列显示成什么完全不确定,是三处里唯一一处
+  "不确定性 bug"而不是"确定性但选错了值"的 bug。
+
+**统一改成 `en-GB`,不是 `en-US`**——不是这次新定的选择,是延续项目里
+已经存在的既定选择:`profile` 页的入会日期、支付倒计时的截止时刻、电子
+票核销时间戳三处早就是 `en-GB`,这次只是把剩下的几处也归并到同一个值,
+避免项目里同时存在 `en-GB`/`en-US`/环境默认三种不同的日期格式表现。
+
+**给以后类似审计的提醒**:检查"翻译完整性"不能只对 JSX 里的字符串字面
+量做文本扫描——`Intl.DateTimeFormat`/`toLocaleDateString`/
+`toLocaleString` 这类"运行时根据 locale 参数拼出格式化文本"的调用,
+以及 `<html lang>` 这类属性值,产出的中文(或任何非英文)内容不会以能
+被简单字符串搜索命中的形式出现在源码里(`zh-CN` 这个字符串本身能被
+grep 到,但它旁边不会有任何看起来像中文的字符),必须专门再过一遍
+`grep -rn "Intl\.DateTimeFormat\|toLocaleDateString\|toLocaleString\|lang="`
+才能完整覆盖。这次三处里有两处(`layout.tsx`、`admin/users/page.tsx`)
+不是最初点名的目标(`lib/format.ts`),是靠这次扩大化的 grep 才带出来的。
+
+**验证**:`npm run build`/`npm run lint` 干净。用真实本地实例(临时
+3001/8083,复用同一套 Postgres/Redis 容器)重新走了一遍选座页→注册→
+选座→确认→(直接改库标记 CONFIRMED,绕过 Stripe)→电子票页这条链路,
+以及 admin dashboard 的占用率图表,三处日期显示均确认变成英文
+("Tue 15 September"/"Wed 16 September" 这类格式,不再是"9月15日周二");
+`admin/users` 的 Joined 列也确认变成 "01/08/2026" 这样的 en-GB 数字
+格式。README 里此前那一批截图中带中文日期的两张(选座页、电子票页)
+连同展示占用率图表 x 轴的 admin dashboard 一并重新截图替换。
+
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
 - 评价评分

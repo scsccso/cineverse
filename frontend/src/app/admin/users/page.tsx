@@ -187,7 +187,7 @@ export default function AdminUsersPage() {
                         <Badge variant={user.role === "ADMIN" ? "default" : "secondary"}>{user.role}</Badge>
                       </td>
                       <td className="px-3 py-2 font-mono text-foreground">
-                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "-"}
+                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString("en-GB") : "-"}
                       </td>
                       <td className="px-3 py-2 text-right">
                         <div className="flex justify-end gap-2">
