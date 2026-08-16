@@ -1715,6 +1715,86 @@ Phase 7 就已实现测过)对应的 admin 页面——**零后端改动**,复�
 是对的)。跑完立刻清理并核对清理后计数为 0。`npm run build`/`npm run
 lint` 干净。没有验证的:真实浏览器里的像素级渲染/交互。
 
+### Admin 订单查询/客服介入 `/admin/bookings`(2026-08-16)
+
+补上一个真实缺口:`GET /api/v1/bookings/{id}` 和 `DELETE /api/v1/bookings/{id}`
+从 Phase 5 起就支持 ADMIN 越权访问(客服场景),但**在这次之前完全没有任何
+办法让 ADMIN 找到一个不知道 UUID 的订单**——`GET /api/v1/bookings`(订单
+列表)是有意做成严格自范围的(见 F-2 那条决定:"没有 ADMIN 越权分支...
+跨用户的经营数据属于 Phase 8 的 admin reports"),所以顺着这个接口找不到
+别人的订单。这次新增的是**搜索能力本身**,不是查看/取消能力——后两者
+Phase 5 就有,这次一行代码没改,原样复用。
+
+**新增 API**:
+
+- `GET /api/v1/admin/bookings?userEmail=&movieTitle=&status=&page=&size=`
+  (仅 ADMIN,新增):三个搜索条件全部可选、可任意组合,全部为空则退化成
+  分页浏览全部订单(和 `GET /api/v1/admin/users` 同一个形状)。
+  `userEmail`/`movieTitle` 是大小写不敏感的模糊匹配(LIKE),`status` 是
+  精确匹配。选这三个维度不是随便定的:`userEmail` 是最常见的客服场景
+  ("这个邮箱订了什么"),`movieTitle` 覆盖"这场电影有哪些订单"这类反向
+  查询,`status` 用来快速过滤"还没付款的"/"已经取消的"这类运营性问题
+  ——三者互相独立、可以自由组合,不是各自开一个专属接口。
+- 响应形状是新建的 `AdminBookingSearchResult`(`{userEmail, booking:
+  BookingResponse}`),**不是往 `BookingResponse` 本身加一个 `userEmail`
+  字段**:后者会让 `GET /bookings`/`GET /bookings/{id}` 这两个顾客也在用
+  的接口平白多出一个自己用不上的字段,而且要在这两个从不需要
+  `Booking.user` 这个 `FetchType.LAZY` 关联的读取路径上,为了这一个字段
+  额外 fetch-join 或者容忍逐行 N+1——一个小的包装类型比在共享 DTO 上开一个
+  只有一半调用方用得上的口子干净。
+- **`GET /bookings/{id}` 和 `DELETE /bookings/{id}` 都没有改动,新的搜索
+  页面直接复用**:两者的 ADMIN 越权分支从 Phase 5 起就存在
+  (`BookingService.requireAccess`),取消订单后座位释放/懒惰过期/
+  `BookingReleasedEvent` 这一整套逻辑不需要为 admin 场景重新实现一遍
+  ——照抄 Phase 3/8 那次"改一个字段就要在两条代码路径上维护同一份逻辑"的
+  反面教训,不给同一个业务规则开两个入口。**这也意味着 admin"代客取消"
+  只能取消 `PENDING`(未支付)的订单**——`cancel()` 对非 `PENDING` 状态
+  直接 409("Booking is X, cannot be cancelled"),这是订单状态机本来就有
+  的边界,不是这次新加的限制;详情页因此在非 `PENDING` 时把取消按钮换成
+  一句说明文字,而不是让 admin 点了才发现 409。
+- **搜索结果列表需要展示 email,但详情页不需要新接口去补它**:
+  `AdminBookingSearchResult` 只在**列表**层面存在,详情页
+  (`/admin/bookings/[id]`)读的还是原始 `GET /bookings/{id}`(没有
+  `userEmail` 字段)。链接从搜索结果跳转时把 email 通过 `?email=` 查询
+  参数带过去,详情页只是显示这个参数(纯 UI 上下文,不参与任何鉴权判断)
+  ——直接改地址栏删掉这个参数依然能看到订单本身的完整信息,只是暂时不
+  知道是哪个顾客的,不是一个安全边界。这个"传一个上下文参数,不为了
+  补一个字段就多开一个接口"的取舍,和 Admin 电影管理"排场次引导卡片"
+  `?movieId=` 预选电影是同一个模式。
+
+**踩到的一个坑,值得记录**:JPQL 原本写的是
+`lower(u.email) like lower(concat('%', :userEmail, '%'))`,单元测试
+(mock repository)全绿,但接入真实 Postgres 的集成测试一跑就 500——
+`function lower(bytea) does not exist`。根因是 PostgreSQL 的 extended
+query protocol 没法从"这个占位符只出现在 `lower(concat(...))` 里"这个
+上下文推断出它的类型,`:userEmail is null` 这半句本身没有问题(替换 SQL
+里能看到两个独立的 `?`,报错的是第二个)。修法是把"拼 `%...%` 通配符 +
+转小写"这一步挪到 Java 里做(`AdminBookingService.likePattern`),JPQL
+里只留 `lower(u.email) like :userEmailPattern`——参数在查询里只出现在
+一个无歧义的位置(比较运算符右边),问题消失。**这不是靠猜出来的**:先
+读了 `GlobalExceptionHandler` 兜底吞掉的真实异常堆栈才定位到这一行,
+集成测试当时就是照这个真实报错改的断言,不是先猜结论再回头凑测试。
+
+**测试**:`AdminBookingServiceTest`(Mockito,过滤参数原样透传、懒惰过期
+批量处理、按各自 booking 分组座位、空结果短路,均照抄
+`BookingServiceListTest` 已验证的模式)+ `AdminBookingFlowIntegrationTest`
+(Testcontainers 真实 Postgres+Redis:401/403、按 email/电影名/状态搜索、
+组合过滤、分页,每个用例用随机 email/电影名把断言范围收窄到自己创建的
+数据,不假设整张表只有自己这一份数据——Postgres 容器在同一个测试类的
+多个用例之间是共享的)。`mvn -o clean test` 全量跑过,174/174 全绿。
+
+**验证**:这次涉及真实后端代码改动(不像上一批 admin 页面是纯前端),
+而 8081 端口上跑着的后端进程是编译在这次改动**之前**的旧代码,又不确定
+这个长期运行的实例是否还有人在用(参考 `DEVELOPMENT.md` 记录过的"长期
+运行的后端进程不会自动感知新代码"这个环境陷阱)——所以没有重启它,而是
+临时在 8082 端口另起一个用当前分支代码编译的实例,指向同一套
+Postgres/Redis,跑完 Node 脚本(自建一部电影+一场场次+一个顾客+两笔
+订单,按 email/电影名/状态搜索、代客取消一笔、确认座位释放、确认另一笔
+不受影响,23 项断言全部通过并清理干净)之后立刻杀掉——`mvn spring-boot:
+run` 会 fork 一个独立的 `java` 子进程,单纯停掉包着它的 shell 任务不会
+连带杀死子进程,是额外按端口号找 PID 确认后才 kill 掉的,全程没有碰
+8081 那个实例(验证前后分别 curl 确认过它仍然是 200)。
+
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
 - 评价评分

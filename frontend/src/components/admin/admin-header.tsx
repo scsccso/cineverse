@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Clapperboard, ArrowLeft, LayoutDashboard, Film, Building2, CalendarClock, TicketCheck, Users } from "lucide-react";
+import { Clapperboard, ArrowLeft, LayoutDashboard, Film, Building2, CalendarClock, Receipt, TicketCheck, Users } from "lucide-react";
 import { LogoutButton } from "@/components/auth/logout-button";
 import type { UserResponse } from "@/lib/api/types";
 
@@ -27,6 +27,7 @@ export function AdminHeader({ user }: { user: UserResponse | null }) {
     { href: "/admin/movies", label: "Movies", icon: Film },
     { href: "/admin/cinemas", label: "Cinemas", icon: Building2 },
     { href: "/admin/showtimes", label: "Showtimes", icon: CalendarClock },
+    { href: "/admin/bookings", label: "Bookings", icon: Receipt },
     { href: "/admin/tickets/redeem", label: "Tickets", icon: TicketCheck },
     { href: "/admin/users", label: "Users", icon: Users },
   ];
