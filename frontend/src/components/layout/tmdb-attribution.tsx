@@ -13,7 +13,7 @@
  * chosen substitution for the bracketed noun. `tmdb-attribution.svg` is
  * TMDB's own official "short" attribution mark (downloaded verbatim from
  * https://www.themoviedb.org/about/logos-attribution, unmodified), sized
- * well below the site's own wordmark (Navbar/AdminHeader logos render at
+ * well below the site's own wordmark (Navbar/AdminSidebar logos render at
  * `size-5` = 20px; this renders at 14px) to satisfy the "less prominent"
  * requirement rather than just asserting it in a comment.
  *

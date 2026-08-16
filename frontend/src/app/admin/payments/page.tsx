@@ -31,7 +31,7 @@ const STATUS_OPTIONS: { value: PaymentStatus | ""; label: string }[] = [
  * reconciling one of these is a manual, out-of-band process (CLAUDE.md
  * Phase 6), this page's whole job stops at "here's exactly which rows".
  *
- * Not in AdminHeader's top nav on purpose — this is an occasionally-checked
+ * Not in AdminSidebar's nav on purpose — this is an occasionally-checked
  * ops page, not a primary workflow like Movies/Bookings/Users, so it's
  * reachable from where the number that motivates it already lives (the
  * dashboard's StatTile) plus a direct URL, not a permanent nav slot.

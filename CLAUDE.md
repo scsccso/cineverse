@@ -1934,6 +1934,115 @@ shell 任务一起停止,这一步和上一批一样需要手动做),全程 8081
 未受影响(验证前后分别 curl 确认过)。`npm run build`/`npm run lint`
 干净。
 
+### Admin 导航:顶部横向导航条 → 可折叠左侧边栏(2026-08-16)
+
+`AdminHeader`(顶部横向导航,1.5.2 节记录过的独立导航 shell)换成
+`AdminSidebar`(左侧边栏)——7 个入口(Dashboard/Movies/Cinemas/Showtimes/
+Bookings/Tickets/Users)横向排列已经拥挤,而侧边栏是管理后台更常规的
+导航形状,不是"顾客端网站味"的顶栏。动手前先交付了一份六点设计方案
+(展开/折叠机制、图标方案、移动端处理、影响范围评估、视觉规范、"回到
+顾客端"入口去留)供确认,方案原样通过、六点均未调整才开始写代码——
+六点各自的落地方式和最终的一处例外记在下面。
+
+关键决定:
+
+- **展开/折叠状态用 `useSyncExternalStore` 读 localStorage,不是
+  `useEffect`+`setState`**:第一版实现在 `useEffect` 里同步 `setState`
+  读取 localStorage,被 `react-hooks/set-state-in-effect` 规则拦下——
+  localStorage 是真正意义上的外部、SSR 不可用状态,这正是
+  `useSyncExternalStore` 存在的场景,不是绕开规则的 workaround,是规则
+  本身指向的正确工具。SSR/首次挂载前统一按"展开"渲染
+  (`getServerSnapshot` 固定返回 `false`)——接受的权衡是如果用户上次
+  选择了"折叠",刷新页面会有一帧展开态的闪烁,不做 cookie/proxy.ts
+  代理的无闪烁版本,对一个这么低风险的偏好设置不值得。
+- **移动端抽屉复用顾客端 `Navbar` 现成的几个技巧**:hamburger 按钮、
+  半透明 scrim、Escape 关闭、路由切换关闭(渲染期间比较 `pathname` 与
+  上一次渲染值,不在 `useEffect` 里同步 `setState`,和 `Navbar`/
+  `admin/movies` TMDB 选片同一个模式)。抽屉关闭时用 `inert` 属性
+  (React 19 类型原生支持,`npm run build` 确认不需要 `@ts-expect-error`)
+  一次性从无障碍树、Tab 顺序、指针事件里都移除,不用手动叠
+  `aria-hidden`+`pointer-events-none`+`tabIndex` 管理。
+- **导航行高度 `h-9`→`h-11`**,对齐 WCAG 2.5.5 的 44×44 最小点击热区——
+  和 1.5 节"审计后修复"那次 `Button`/`Input` 默认高度改法是同一个标准,
+  这次是新组件从一开始就按标准写,不是审计后再补。
+- **用户名 + "回到顾客端网站" + 退出登录搬到侧边栏底部**,`LogoutButton`
+  新增 `iconOnly` 可选 prop(向后兼容,不传时行为不变)供折叠态下只显示
+  图标。
+- **影响范围原计划仅限共享 shell**(`AdminLayout` + 新的
+  `AdminSidebar` 组件,删除 `AdminHeader`),不改动 13 个页面文件本身——
+  真实浏览器验证阶段发现一个例外,见下面单独一条。
+
+**验证方式**:环境用的是一个独立的临时前端实例(3001 端口,因为用户
+自己长期跑着的开发服务器占了 3000)+ 一个临时后端实例(8083 端口,
+`CORS_ALLOWED_ORIGINS` 显式加宽到 3001;8081 上跑着的实例不确定是否
+还有人在用,和上一批`/admin/payments`验证同样的判断,没有碰它)。
+Playwright 登录后跑一遍完整覆盖:桌面展开(1280px,10 个页面类型各一次)、
+桌面折叠(含刷新后 localStorage persistence 的确认)、平板三档
+(768/900/1024px)、移动抽屉(390px,含点导航链接自动关闭、点 scrim
+关闭)、两个详情页。每一步除了截图,同时用 `document.documentElement
+.scrollWidth` vs `window.innerWidth` 等指标做数值断言,不是只靠肉眼看
+截图。跑完按端口号找 PID kill 掉临时前端/后端实例(`npm run dev`/
+`mvn spring-boot:run` fork 出的子进程不会随包着它的任务一起停,和以前
+几批一样需要手动按 PID 处理),验证前后确认 3000/8081 的监听 PID
+未变。`npm run build`/`npm run lint` 干净。
+
+- **平板宽度(768~1024px)下侧边栏(256px)+ 内容区是否显得拥挤**:
+  **不拥挤,三档都不拥挤**。1024px/900px 下 dashboard 的三张统计卡片和
+  四个时间范围按钮横向排布宽松,payments 页面单个 Status 筛选下拉框
+  周围留白明显,远没有到需要换行的地步。768px(侧边栏之外只剩 512px
+  内容宽度)下 dashboard 三卡片仍能横向放下但间距收紧、payments 单
+  筛选器完全不受影响——是"更紧凑"而不是"拥挤到需要重新设计"。
+- **Payments/Bookings/Showtimes 这三个宽表格页面,内容列变窄后是否
+  仍只是产生横向滚动、没有破版**:**Payments 和 Showtimes 没有问题
+  (768px 下分别是单一筛选器和"当天无场次"的空状态,本来就没有宽表格
+  参与);Bookings 在验证过程中确实发现并修复了一次真实的破版,不是
+  单纯的横向滚动**——细节见下面单独一条。修复后重新测量:768px 下
+  `admin/bookings` 页面级 `document.documentElement.scrollWidth`
+  等于 `window.innerWidth`(768,无页面级溢出),搜索表单的三个字段
+  (Customer Email / Movie Title / Status)正确收缩到约 133px/列、完整
+  可见不截断;Results 表格的横向滚动容器本身收缩到 430px(可用宽度),
+  内部表格保持 610px(5 列 + 邮箱地址这类长文本的自然宽度)在容器内部
+  滚动(`isScrollingInternally: true`)——这才是"变窄后只是产生横向
+  滚动"的正确形态。
+
+**发现并修复:`admin/bookings` 页面在 768px 下的真实破版,根因在共享
+shell,不在页面本身**——这是这次交付里唯一突破"不改 13 个页面文件"
+范围的地方,记录清楚原因和为什么最终判断值得做这个例外。表面现象是
+搜索表单的 `Status` 下拉在 768px 视口下被切到可视区域外,`document
+.documentElement.scrollWidth`(948)明显超出 `window.innerWidth`
+(768)。逐层测量(而不是猜)定位到:根因**不是** `admin/bookings/
+page.tsx` 那个 `sm:grid-cols-3` 搜索表单网格本身的问题——那个网格
+自己不溢出(`scrollWidth === clientWidth`),问题出在 `AdminLayout`
+里包裹 `{children}` 的内容列容器当时写的是 `flex min-w-0 flex-1
+flex-col`。`min-w-0` 确实让这个容器本身作为**外层**(侧边栏那一行)
+flex 布局的子项正确收缩,但这个容器同时用 `flex-col` 把自己变成了
+**内层**一个新的 flex 容器,而 `{children}`(页面自己的顶层
+`<section>`)因此变成了这个内层 flex 容器的子项——**这一层子项没有
+自己的 `min-w-0`**,于是它的自动最小宽度退化成了内容的
+min-content 宽度。`admin/bookings` 的搜索表单恰好是唯一一个触发到
+这个自动最小宽度足够宽(三个原生 `<input>`/`<select>`,每个自然最小
+宽度约 190px,三个加间距约 610px)的页面,610px 超过 768px 视口下
+侧边栏之外实际可用的 512px,于是整个内容列被撑宽到 610px 左右并推出
+视口——这正是 `AdminLayout` 文件里那条已有注释("without min-w-0,
+a flex child sizes to its content's intrinsic width by default")
+描述的同一个机制,只是当时只在外层用到的那一层加了防护,内层因为
+`flex-col` 又新开了一层同样的坑。**修复只改了 `AdminLayout` 这一个
+文件**:内容列容器的 `flex flex-col` 直接去掉,只保留
+`min-w-0 flex-1`(这两个类是它作为**外层**flex 子项要用到的,和它
+自己是否是 flex 容器无关)——`{children}` 和 `<TmdbAttribution>`
+不再是 flex 子项,退回普通块级盒子的 `width:auto` 语义(填满容器宽度,
+没有内容驱动的最小宽度下限),同时块级元素本来就会依次纵向堆叠,不需要
+`flex-col` 也能达到同样的排列效果(这个容器上原本也没有任何
+`gap-*`/`justify-*`/`order-*` 之类真正依赖 flex 布局的样式)。修复前后
+用同一个测量脚本对比确认:修复前 `768-bookings` 的 `.overflow-x-auto`
+表格容器本身 `clientWidth === scrollWidth === 610`(容器没有被约束在
+可用宽度内,也没有在内部滚动);修复后 `clientWidth: 430,
+scrollWidth: 610, isScrollingInternally: true`(容器正确收缩到可用
+宽度、表格内容在容器内部滚动)。
+
+完整改动文件清单、`AdminSidebar` 组件结构见对应源文件注释,不在这里
+重复。
+
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
 - 评价评分

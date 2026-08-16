@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 
 /**
  * Catches errors thrown by pages under app/admin/**. app/admin/layout.tsx
- * (AdminHeader + the .admin-light wrapper) is NOT inside this boundary —
+ * (AdminSidebar + the .admin-light wrapper) is NOT inside this boundary —
  * same Next.js layout-persists-around-error.tsx semantics as the customer
  * route group's error.tsx — so this only needs Card-based content; it
  * doesn't need to redeclare the light theme or the header itself.
