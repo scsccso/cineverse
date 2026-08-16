@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { getAdminMovies, deleteMovie } from "@/lib/api/admin-movies";
 import { resolveMediaUrl, ApiError } from "@/lib/api/client";
@@ -11,6 +11,8 @@ import type { MovieResponse, MovieStatus, Page } from "@/lib/api/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 
 const STATUS_LABELS: Record<MovieStatus, string> = {
   NOW_PLAYING: "Now Playing",
@@ -26,14 +28,19 @@ const STATUS_BADGE_VARIANT: Record<MovieStatus, "default" | "secondary" | "outli
 
 export default function AdminMoviesPage() {
   const { callAuthorized } = useAuth();
-  const [moviesPage, setMoviesPage] = useState<Page<MovieResponse> | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [titleInput, setTitleInput] = useState("");
+  const [appliedTitle, setAppliedTitle] = useState("");
   const [page, setPage] = useState(0);
 
-  // Same derived-loading pattern as admin/users/page.tsx: "loading" is
-  // whether the data on hand matches the page we asked for, not a manually
-  // toggled flag that can drift out of sync with it.
-  const loading = !moviesPage || moviesPage.number !== page;
+  // Same derived-loading pattern as admin/users/page.tsx, extended to also
+  // track the search term that produced the data on hand — a title change
+  // is a second, independent axis a plain "moviesPage.number !== page"
+  // check can't see, so the held result now carries the params it was
+  // actually fetched for (same shape as admin/bookings/admin/payments).
+  const [result, setResult] = useState<{ page: number; title: string; data: Page<MovieResponse> } | null>(null);
+  const loading = !result || result.page !== page || result.title !== appliedTitle;
+
+  const [error, setError] = useState<string | null>(null);
 
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
@@ -50,18 +57,26 @@ export default function AdminMoviesPage() {
 
   useEffect(() => {
     const thisRequestId = ++requestIdRef.current;
-    getAdminMovies(page)
+    getAdminMovies(page, 20, appliedTitle || undefined)
       .then((data) => {
         if (requestIdRef.current !== thisRequestId) return;
-        setMoviesPage(data);
+        setResult({ page, title: appliedTitle, data });
         setError(null);
       })
       .catch(() => {
         if (requestIdRef.current !== thisRequestId) return;
-        setMoviesPage(null);
         setError("Failed to load movies");
       });
-  }, [page]);
+  }, [page, appliedTitle]);
+
+  // Explicit submit, not live-as-you-type — same convention as the TMDB
+  // search picker and admin/bookings' search form (see CLAUDE.md): one
+  // request per deliberate search action, not one per keystroke.
+  function handleSearchSubmit(event: FormEvent) {
+    event.preventDefault();
+    setPage(0);
+    setAppliedTitle(titleInput.trim());
+  }
 
   const handleDelete = (movie: MovieResponse) => {
     setConfirmDialog({
@@ -71,7 +86,9 @@ export default function AdminMoviesPage() {
       action: async () => {
         try {
           await callAuthorized((token) => deleteMovie(token, movie.id));
-          setMoviesPage((prev) => (prev ? { ...prev, content: prev.content.filter((m) => m.id !== movie.id) } : prev));
+          setResult((prev) =>
+            prev ? { ...prev, data: { ...prev.data, content: prev.data.content.filter((m) => m.id !== movie.id) } } : prev,
+          );
           closeDialog();
         } catch (err: unknown) {
           // Shown as-is — e.g. the 409 "still has scheduled showtimes"
@@ -103,6 +120,22 @@ export default function AdminMoviesPage() {
         </Link>
       </header>
 
+      <form onSubmit={handleSearchSubmit} className="mb-6 flex max-w-sm items-end gap-2">
+        <Field className="flex-1">
+          <FieldLabel htmlFor="movieTitleSearch">Search by title</FieldLabel>
+          <Input
+            id="movieTitleSearch"
+            placeholder="Interstellar"
+            value={titleInput}
+            onChange={(event) => setTitleInput(event.target.value)}
+          />
+        </Field>
+        <Button type="submit" variant="outline" className="h-11">
+          <Search className="size-4" aria-hidden />
+          Search
+        </Button>
+      </form>
+
       {error && (
         <div role="alert" className="mb-6 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
           {error}
@@ -116,8 +149,10 @@ export default function AdminMoviesPage() {
         <CardContent>
           {loading ? (
             <div className="py-8 text-center text-sm text-muted-foreground">Loading...</div>
-          ) : !moviesPage || moviesPage.content.length === 0 ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">No movies yet</div>
+          ) : result.data.content.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              {appliedTitle ? `No movies match "${appliedTitle}"` : "No movies yet"}
+            </div>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="w-full text-sm">
@@ -132,7 +167,7 @@ export default function AdminMoviesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {moviesPage.content.map((movie) => (
+                  {result.data.content.map((movie) => (
                     <tr key={movie.id} className="border-b border-border last:border-0">
                       <td className="px-3 py-2">
                         <div className="relative aspect-[2/3] w-12 overflow-hidden rounded border border-border bg-muted">
@@ -175,17 +210,17 @@ export default function AdminMoviesPage() {
             </div>
           )}
 
-          {moviesPage && moviesPage.totalPages > 1 && (
+          {result && result.data.totalPages > 1 && (
             <div className="mt-4 flex items-center justify-between">
               <p className="text-sm text-muted-foreground">
-                {moviesPage.totalElements} total, page {moviesPage.number + 1} of {moviesPage.totalPages}
+                {result.data.totalElements} total, page {result.data.number + 1} of {result.data.totalPages}
               </p>
               <div className="flex gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={moviesPage.first || loading}
+                  disabled={result.data.first || loading}
                   onClick={() => setPage((p) => Math.max(0, p - 1))}
                 >
                   Previous
@@ -194,7 +229,7 @@ export default function AdminMoviesPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={moviesPage.last || loading}
+                  disabled={result.data.last || loading}
                   onClick={() => setPage((p) => p + 1)}
                 >
                   Next

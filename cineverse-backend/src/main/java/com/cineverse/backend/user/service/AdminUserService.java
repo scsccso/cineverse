@@ -23,9 +23,18 @@ public class AdminUserService {
         this.bookingRepository = bookingRepository;
     }
 
+    /**
+     * {@code email} is optional — blank/null browses every user (unchanged
+     * behavior for the existing caller), matching AdminBookingService.search
+     * and MovieService.list's "no filter given" degradation, not a special
+     * case bolted on separately.
+     */
     @Transactional(readOnly = true)
-    public Page<User> getAllUsers(Pageable pageable) {
-        return userRepository.findAll(pageable);
+    public Page<User> getAllUsers(String email, Pageable pageable) {
+        if (email == null || email.isBlank()) {
+            return userRepository.findAll(pageable);
+        }
+        return userRepository.findByEmailContainingIgnoreCase(email.trim(), pageable);
     }
 
     @Transactional

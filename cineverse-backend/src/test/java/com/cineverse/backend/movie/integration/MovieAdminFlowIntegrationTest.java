@@ -273,6 +273,29 @@ class MovieAdminFlowIntegrationTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void titleSearchIsCaseInsensitiveAndFindsOnlyMatchingMovies() throws Exception {
+        String accessToken = loginAsAdmin();
+        UUID genreId = firstGenreId();
+        String uniqueTitle = "Zzyzx Title Search " + UUID.randomUUID();
+        UUID matchingMovieId = createMovie(accessToken, uniqueTitle, genreId);
+        // A second, unrelated movie exists in the same run (this one, plus
+        // 11 real seed movies) — the assertion below checks this one movie
+        // is present and searching an unrelated fragment excludes it,
+        // rather than asserting an exact result count against the whole
+        // public catalog.
+        createMovie(accessToken, "Unrelated Movie " + UUID.randomUUID(), genreId);
+
+        mockMvc.perform(get("/api/v1/movies").param("title", "zzyzx title search"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id=='" + matchingMovieId + "')]").exists())
+                .andExpect(jsonPath("$.content.length()").value(1));
+
+        mockMvc.perform(get("/api/v1/movies").param("title", "a title that matches nothing " + UUID.randomUUID()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isEmpty());
+    }
+
     private UUID createMovie(String accessToken, String title, UUID genreId) throws Exception {
         MovieRequest request = new MovieRequest(
                 title, "desc", "tagline", 120, "PG", null, null, MovieStatus.COMING_SOON, Set.of(genreId));

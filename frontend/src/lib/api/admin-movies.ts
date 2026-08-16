@@ -16,9 +16,14 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8
 /** GET /api/v1/movies is public (no Authorization needed) — same endpoint the
  * customer-facing movies.ts hits, but with page/size instead of a status
  * filter, since admin needs every status (including ENDED) in one paginated
- * list, not just what's currently playing. */
-export function getAdminMovies(page: number = 0, size: number = 20): Promise<Page<MovieResponse>> {
-  return apiFetch<Page<MovieResponse>>(`/api/v1/movies?page=${page}&size=${size}`);
+ * list, not just what's currently playing. title is an optional
+ * case-insensitive "contains" search, added alongside page/size rather than
+ * as a fourth positional param so existing callers that only pass page/size
+ * don't need updating. */
+export function getAdminMovies(page: number = 0, size: number = 20, title?: string): Promise<Page<MovieResponse>> {
+  const query = new URLSearchParams({ page: String(page), size: String(size) });
+  if (title) query.set("title", title);
+  return apiFetch<Page<MovieResponse>>(`/api/v1/movies?${query.toString()}`);
 }
 
 /** GET /api/v1/genres is public and returns the fixed, non-manageable

@@ -49,9 +49,10 @@ public class MovieService {
     }
 
     @Transactional(readOnly = true)
-    public Page<MovieResponse> list(MovieStatus status, UUID genreId, Pageable pageable) {
+    public Page<MovieResponse> list(MovieStatus status, UUID genreId, String title, Pageable pageable) {
         Specification<Movie> spec = Specification.where(MovieSpecifications.hasStatus(status))
-                .and(MovieSpecifications.hasGenre(genreId));
+                .and(MovieSpecifications.hasGenre(genreId))
+                .and(MovieSpecifications.hasTitleContaining(title));
         return movieRepository.findAll(spec, pageable).map(movieMapper::toResponse);
     }
 

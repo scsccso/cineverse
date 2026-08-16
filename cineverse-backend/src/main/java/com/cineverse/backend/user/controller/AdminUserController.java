@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -39,9 +40,10 @@ public class AdminUserController {
     }
 
     @GetMapping
-    @Operation(summary = "获取用户列表", description = "分页查询所有用户(仅限 ADMIN)")
-    public Page<UserResponse> getAllUsers(Pageable pageable) {
-        Page<User> users = adminUserService.getAllUsers(pageable);
+    @Operation(summary = "获取用户列表", description = "分页查询所有用户(仅限 ADMIN),"
+            + "可选按 email 模糊搜索(大小写不敏感)")
+    public Page<UserResponse> getAllUsers(@RequestParam(required = false) String email, Pageable pageable) {
+        Page<User> users = adminUserService.getAllUsers(email, pageable);
         return users.map(userMapper::toResponse);
     }
 
