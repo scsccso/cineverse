@@ -7,7 +7,7 @@
 const CINEMA_TIME_ZONE = "Asia/Kuala_Lumpur";
 
 export function formatShowDate(iso: string): string {
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat("en-GB", {
     timeZone: CINEMA_TIME_ZONE,
     month: "long",
     day: "numeric",
@@ -16,7 +16,7 @@ export function formatShowDate(iso: string): string {
 }
 
 export function formatShowTime(iso: string): string {
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat("en-GB", {
     timeZone: CINEMA_TIME_ZONE,
     hour: "2-digit",
     minute: "2-digit",

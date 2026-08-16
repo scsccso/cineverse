@@ -47,7 +47,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="zh-CN"
+      lang="en-GB"
       data-scroll-behavior="smooth"
       className={`dark ${inter.variable} ${jetbrainsMono.variable} ${clashDisplay.variable} h-full antialiased`}
     >
