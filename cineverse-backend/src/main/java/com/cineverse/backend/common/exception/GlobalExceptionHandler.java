@@ -5,6 +5,8 @@ import com.cineverse.backend.auth.exception.InvalidCredentialsException;
 import com.cineverse.backend.auth.exception.InvalidRefreshTokenException;
 import com.cineverse.backend.booking.exception.SeatUnavailableException;
 import com.cineverse.backend.movie.exception.MovieHasScheduledShowtimesException;
+import com.cineverse.backend.movie.exception.MovieStatusChangeNotAllowedException;
+import com.cineverse.backend.movie.exception.MovieStatusUnchangedException;
 import com.cineverse.backend.movie.exception.TmdbGatewayException;
 import com.cineverse.backend.payment.exception.InvalidStripeSignatureException;
 import com.cineverse.backend.report.exception.InvalidReportRangeException;
@@ -77,6 +79,16 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MovieHasScheduledShowtimesException.class)
     public ResponseEntity<ErrorResponse> handleMovieHasScheduledShowtimes(MovieHasScheduledShowtimesException ex) {
+        return build(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(MovieStatusChangeNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleMovieStatusChangeNotAllowed(MovieStatusChangeNotAllowedException ex) {
+        return build(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(MovieStatusUnchangedException.class)
+    public ResponseEntity<ErrorResponse> handleMovieStatusUnchanged(MovieStatusUnchangedException ex) {
         return build(HttpStatus.CONFLICT, ex.getMessage());
     }
 

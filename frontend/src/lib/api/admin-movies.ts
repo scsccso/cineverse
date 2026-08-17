@@ -4,6 +4,8 @@ import type {
   GenreResponse,
   MovieRequest,
   MovieResponse,
+  MovieStatus,
+  MovieStatusHistoryEntry,
   Page,
   TmdbMovieDetail,
   TmdbSearchResult,
@@ -55,6 +57,29 @@ export function updateMovie(token: string, id: string, request: MovieRequest): P
 export function deleteMovie(token: string, id: string): Promise<void> {
   return apiFetch<void>(`/api/v1/movies/${id}`, {
     method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+/** PATCH /api/v1/movies/{id}/status — the only path that changes a movie's
+ * status; PUT rejects a status difference outright (409, see updateMovie's
+ * doc comment / MovieRequest). Requesting the movie's already-current
+ * status is rejected too (409, "Movie is already X.") rather than treated
+ * as a silent no-op — every successful call here writes a
+ * movie_status_history row. */
+export function updateMovieStatus(token: string, id: string, status: MovieStatus): Promise<MovieResponse> {
+  return apiFetch<MovieResponse>(`/api/v1/movies/${id}/status`, {
+    method: "PATCH",
+    body: { status },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+/** GET /api/v1/admin/movies/{id}/status-history — ADMIN only (the response
+ * includes the acting admin's email, so unlike GET /api/v1/movies/{id} this
+ * can't sit on the public /api/v1/movies/** path), newest first. */
+export function getMovieStatusHistory(token: string, id: string): Promise<MovieStatusHistoryEntry[]> {
+  return apiFetch<MovieStatusHistoryEntry[]>(`/api/v1/admin/movies/${id}/status-history`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 }

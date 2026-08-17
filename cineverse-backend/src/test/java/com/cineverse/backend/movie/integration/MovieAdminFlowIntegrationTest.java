@@ -1,5 +1,6 @@
 package com.cineverse.backend.movie.integration;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -14,7 +15,9 @@ import com.cineverse.backend.auth.dto.LoginRequest;
 import com.cineverse.backend.auth.dto.RegisterRequest;
 import com.cineverse.backend.movie.dto.MovieRequest;
 import com.cineverse.backend.movie.dto.UpdateMovieImageUrlsRequest;
+import com.cineverse.backend.movie.dto.UpdateMovieStatusRequest;
 import com.cineverse.backend.movie.entity.MovieStatus;
+import com.cineverse.backend.movie.repository.MovieStatusHistoryRepository;
 import com.cineverse.backend.showtime.dto.CreateShowtimeRequest;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -71,6 +74,9 @@ class MovieAdminFlowIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private MovieStatusHistoryRepository movieStatusHistoryRepository;
 
     @Test
     void adminCanCreateUploadPosterAndDeleteMovie() throws Exception {
@@ -294,6 +300,153 @@ class MovieAdminFlowIntegrationTest {
         mockMvc.perform(get("/api/v1/movies").param("title", "a title that matches nothing " + UUID.randomUUID()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isEmpty());
+    }
+
+    @Test
+    void creatingAMovieWritesTheInitialHistoryRowAndPatchAppendsToIt() throws Exception {
+        String accessToken = loginAsAdmin();
+        UUID genreId = firstGenreId();
+        UUID movieId = createMovie(accessToken, "History Genesis " + UUID.randomUUID(), genreId);
+
+        // createMovie's helper always requests COMING_SOON — row zero must
+        // reflect that with a null fromStatus (an initial state, not a
+        // "change"), and the creating admin as changedByEmail.
+        mockMvc.perform(get("/api/v1/admin/movies/{id}/status-history", movieId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].fromStatus").doesNotExist())
+                .andExpect(jsonPath("$[0].toStatus").value("COMING_SOON"))
+                .andExpect(jsonPath("$[0].changedByEmail").value("admin@cineverse.local"));
+
+        mockMvc.perform(patch("/api/v1/movies/{id}/status", movieId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateMovieStatusRequest(MovieStatus.NOW_PLAYING))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("NOW_PLAYING"));
+
+        // Newest first: the PATCH's row is [0], the creation row is [1].
+        mockMvc.perform(get("/api/v1/admin/movies/{id}/status-history", movieId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].fromStatus").value("COMING_SOON"))
+                .andExpect(jsonPath("$[0].toStatus").value("NOW_PLAYING"))
+                .andExpect(jsonPath("$[0].changedByEmail").value("admin@cineverse.local"))
+                .andExpect(jsonPath("$[1].fromStatus").doesNotExist())
+                .andExpect(jsonPath("$[1].toStatus").value("COMING_SOON"));
+    }
+
+    @Test
+    void patchingToTheSameStatusIsRejectedWith409() throws Exception {
+        String accessToken = loginAsAdmin();
+        UUID genreId = firstGenreId();
+        UUID movieId = createMovie(accessToken, "Same Status " + UUID.randomUUID(), genreId); // COMING_SOON
+
+        mockMvc.perform(patch("/api/v1/movies/{id}/status", movieId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateMovieStatusRequest(MovieStatus.COMING_SOON))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Movie is already COMING_SOON."));
+    }
+
+    @Test
+    void puttingADifferentStatusIsRejectedWith409SoPatchIsTheOnlyWayToChangeStatus() throws Exception {
+        String accessToken = loginAsAdmin();
+        UUID genreId = firstGenreId();
+        UUID movieId = createMovie(accessToken, "PUT Status Guard " + UUID.randomUUID(), genreId); // COMING_SOON
+
+        MovieRequest attemptedStatusChange = new MovieRequest(
+                "PUT Status Guard Renamed", "desc", "tagline", 120, "PG", null, null,
+                MovieStatus.NOW_PLAYING, Set.of(genreId));
+
+        mockMvc.perform(put("/api/v1/movies/{id}", movieId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(attemptedStatusChange)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("PATCH")));
+
+        // Untouched — the rejected PUT must not have changed status or
+        // title (applyRequest() must never run once the guard throws).
+        mockMvc.perform(get("/api/v1/movies/{id}", movieId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMING_SOON"))
+                .andExpect(jsonPath("$.title").value(org.hamcrest.Matchers.not("PUT Status Guard Renamed")));
+
+        // ...and no history row was written for the rejected attempt.
+        assertThat(movieStatusHistoryRepository.findByMovieIdOrderByChangedAtDesc(movieId)).hasSize(1);
+    }
+
+    @Test
+    void puttingWithUnchangedStatusSucceedsAndDoesNotAddHistory() throws Exception {
+        String accessToken = loginAsAdmin();
+        UUID genreId = firstGenreId();
+        UUID movieId = createMovie(accessToken, "PUT No Status Change " + UUID.randomUUID(), genreId); // COMING_SOON
+
+        MovieRequest ordinaryEdit = new MovieRequest(
+                "PUT No Status Change Renamed", "new desc", "tagline", 130, "PG-13", null, null,
+                MovieStatus.COMING_SOON, Set.of(genreId));
+
+        mockMvc.perform(put("/api/v1/movies/{id}", movieId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(ordinaryEdit)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("PUT No Status Change Renamed"));
+
+        // Only the creation row — an ordinary edit must not pollute history.
+        assertThat(movieStatusHistoryRepository.findByMovieIdOrderByChangedAtDesc(movieId)).hasSize(1);
+    }
+
+    @Test
+    void statusHistoryAndPatchStatusAreAdminOnly() throws Exception {
+        String customerToken = registerAndLoginCustomer();
+        String accessToken = loginAsAdmin();
+        UUID genreId = firstGenreId();
+        UUID movieId = createMovie(accessToken, "History Guard " + UUID.randomUUID(), genreId);
+
+        mockMvc.perform(get("/api/v1/admin/movies/{id}/status-history", movieId))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/admin/movies/{id}/status-history", movieId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(patch("/api/v1/movies/{id}/status", movieId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateMovieStatusRequest(MovieStatus.NOW_PLAYING))))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(patch("/api/v1/movies/{id}/status", movieId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateMovieStatusRequest(MovieStatus.NOW_PLAYING))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void statusHistoryForANonExistentMovieReturns404() throws Exception {
+        String accessToken = loginAsAdmin();
+
+        mockMvc.perform(get("/api/v1/admin/movies/{id}/status-history", UUID.randomUUID())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void deletingAMovieCascadesItsStatusHistory() throws Exception {
+        String accessToken = loginAsAdmin();
+        UUID genreId = firstGenreId();
+        UUID movieId = createMovie(accessToken, "Cascade Delete " + UUID.randomUUID(), genreId);
+
+        assertThat(movieStatusHistoryRepository.findByMovieIdOrderByChangedAtDesc(movieId)).hasSize(1);
+
+        mockMvc.perform(delete("/api/v1/movies/{id}", movieId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isNoContent());
+
+        assertThat(movieStatusHistoryRepository.findByMovieIdOrderByChangedAtDesc(movieId)).isEmpty();
     }
 
     private UUID createMovie(String accessToken, String title, UUID genreId) throws Exception {

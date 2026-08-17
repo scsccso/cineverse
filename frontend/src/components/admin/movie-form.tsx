@@ -5,20 +5,15 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Check } from "lucide-react";
 import { movieFormSchema, type MovieFormInput, type MovieFormOutput } from "@/lib/validation/admin-movies";
-import type { GenreResponse, MovieRequest, MovieResponse, MovieStatus, TmdbMovieDetail } from "@/lib/api/types";
+import type { GenreResponse, MovieRequest, MovieResponse, TmdbMovieDetail } from "@/lib/api/types";
 import { ApiError } from "@/lib/api/client";
+import { MOVIE_STATUS_OPTIONS } from "@/lib/movie-status";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AnimatedFieldError } from "@/components/motion/animated-field-error";
 import { AnimatedFormBanner } from "@/components/motion/animated-form-banner";
 import { SubmitProgressBar } from "@/components/motion/submit-progress-bar";
-
-const STATUS_OPTIONS: { value: MovieStatus; label: string }[] = [
-  { value: "COMING_SOON", label: "Coming Soon" },
-  { value: "NOW_PLAYING", label: "Now Playing" },
-  { value: "ENDED", label: "Ended" },
-];
 
 /** initialMovie (edit) and tmdbPrefill (create, TMDB-picked) are mutually
  * exclusive — a plain blank create form has neither. contentRating/
@@ -195,23 +190,34 @@ export function MovieForm({
             <AnimatedFieldError message={errors.userRating?.message} />
           </Field>
 
-          <Field>
-            <FieldLabel htmlFor="status">Status</FieldLabel>
-            <select
-              id="status"
-              className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-              {...register("status")}
-            >
-              {STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            {!initialMovie && (
+          {/* Editing: status can no longer be changed through this PUT-backed
+              form (see MovieRequest's doc comment) — the field still has to
+              be submitted (backend requires it, and rejects a PUT whose
+              status differs from the movie's current one), just not as
+              something the admin can edit here. A hidden input keeps it
+              registered with its unchanged defaultValue. The read-only
+              display and the actual "change status" control live in
+              MovieStatusControl on the edit page instead. Creating: this is
+              still the only place to set the initial status. */}
+          {initialMovie ? (
+            <input type="hidden" {...register("status")} />
+          ) : (
+            <Field>
+              <FieldLabel htmlFor="status">Status</FieldLabel>
+              <select
+                id="status"
+                className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                {...register("status")}
+              >
+                {MOVIE_STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
               <FieldDescription>New movies default to &quot;Coming Soon&quot; — switch to &quot;Now Playing&quot; manually once everything checks out.</FieldDescription>
-            )}
-          </Field>
+            </Field>
+          )}
         </div>
 
         <Field data-invalid={!!errors.trailerUrl || undefined}>

@@ -78,6 +78,19 @@ export interface MovieRequest {
   genreIds: string[];
 }
 
+/** One row of GET /api/v1/admin/movies/{id}/status-history, newest first.
+ * fromStatus is null for the very first row a movie ever gets — written at
+ * creation, an initial state rather than a "change". changedByEmail is
+ * null when the acting admin's account has since been deleted (the row
+ * itself survives, only the "who" is lost) — shown as "—". */
+export interface MovieStatusHistoryEntry {
+  id: string;
+  fromStatus: MovieStatus | null;
+  toStatus: MovieStatus;
+  changedAt: string;
+  changedByEmail: string | null;
+}
+
 /** GET /api/v1/admin/movies/tmdb-search — deliberately minimal, just enough
  * to visually pick the right movie out of a list. No overview/runtime; see
  * TmdbMovieDetail for what selecting a result fetches. */
