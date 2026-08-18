@@ -799,7 +799,52 @@ CineVerse 是非商业作品集,符合限制;若项目商业化,这个数据源�
 的替代,如 `Oppenheimer` 映射成 `Drama`+`War`)。完整的 migration 依赖
 顺序、置信度判断见 `docs/DECISIONS.md`「种子数据扩充」。
 
-### `poster_url`/`backdrop_url` 从此是两个不同数据源(2026-08-08)
+**更正(2026-08-19)**:上面"11 部真实电影"和下文(以及 CLAUDE.md 其余多处
+2026-08-13~08-16 的条目)反复出现的同一个数字,描述的其实是**这个项目
+从 Phase 2 起一直在用的那一个长期运行的开发数据库**的实际状态,不是"任何
+一次全新 `flyway migrate` 会产生的行数"——这两者一直不是同一件事,只是
+在那个唯一的开发数据库上无法区分,直到这次"Demo 数据重置"功能第一次
+需要对着一个真正全新迁移出来的数据库(先是 Testcontainers 集成测试,
+后来是一次性的 throwaway smoketest 数据库)去数电影数量,才第一次露出来:
+两边数出来的都是 **10**,不是 11。
+
+根因,顺着 `V14`/`V15`/`V16`/`V17` 四条 migration 自己的注释就能读出来,
+不需要额外考古:`V14__update_movie_poster_urls.sql` 自己写得很清楚,它
+要打补丁的这部电影"originally created ad hoc through the running app
+(Admin API / manual testing), not by an earlier Flyway seed script"——
+也就是说**电影本身叫"Dune Part Three",它从来不是被任何一条 migration
+`INSERT` 进去的**,是 Phase 2 阶段手动测试时通过 Admin API 建的,只存在于
+那一个长期运行、从未被清空重建过的开发数据库里。`V14`(改它的海报)、
+`V17`(改它的背景图,注释里写的"backfills backdrop_url...for all 11
+movies currently in the table"里的"11"就是这么来的)都只是拿 `WHERE
+title = 'Dune Part Three'` 去更新一行**如果它存在的话**——这两条
+migration 自己的注释都提前说明过这一步在没有这行数据的环境上是"安全的
+空操作"(0 行受影响,不报错),但当时把这个"万一"当成理论上的边界情况
+在写,没有预料到"没有这行数据的环境"以后会变成**每一个真正全新的环境
+(CI 的 Testcontainers、这次 demo-reset 功能验证用的 throwaway
+数据库、乃至以后任何一次真正的生产环境首次部署)的默认状态**——`V16`
+才是唯一真正用 `INSERT` 语句灌数据的种子 migration,而且只灌了 10 部
+电影,不是 11 部。
+
+**实际影响,不只是文档数字对不上**:任何一次真正从零开始的 `flyway
+migrate`(包括 `docs/DEPLOYMENT.md` 描述的首次生产部署)最终只会有 **10**
+部真实种子电影,不会有"Dune Part Three"这第 11 部——`V14` 的海报补丁和
+`V17` 里那一条对应的背景图补丁,在这样的环境里会永远是空操作,不是"大概率
+是"而是"确定是"。这是一个真实的、目前还没有被处理的数据缺口(不是单纯的
+文档措辞问题),但这次的范围只是"把数字核实清楚、改成准确的",不包括
+决定要不要为了让全新环境也凑出 11 部电影而新写一条 migration 去正式
+`INSERT` 一行"Dune Part Three"的数据(那需要重新决定这部电影的分级/评分/
+genre 等字段,以及要不要在这么久之后还用这个可能已经不准确的未来电影
+数据,是一个独立的、需要单独讨论的决定,不在这次范围内)——如实记录在
+这里,不是假装这件事不存在。
+
+**怎么读 CLAUDE.md 剩下的部分**:2026-08-13 至 2026-08-16 之间好几处提到
+"11 部电影"/"11 部种子电影"的条目(比如 TMDB 图片处理方式的类比、
+`admin/movies` 下拉框分页大小的估算、"这 11 部电影里哪些需要关注"的
+设计构想、电影状态历史"不回填种子数据"那条决定),都是在准确描述"当时
+那一个长期开发数据库"的真实状态,原文不需要跟着这次一起改——但如果你在
+一个**新的**环境(新 clone 的 CI、新起的容器、新部署的实例)上核对这些
+数字,应该预期看到的是 10,不是 11,这条更正就是留给这种情况看的。
 `poster_url` 继续用 OMDb(卡片缩略图分辨率校准,~380px 宽);
 `backdrop_url` 改用 **TMDB**(`backdrop_path`,`image.tmdb.org/t/p/w1280/`
 ——专为横版沉浸式背景图设计的真实剧照,不是海报硬拉伸)。`next.config.ts`
@@ -2265,6 +2310,119 @@ PID kill,单纯停掉包着它的 shell 任务不会连带杀死子进程)确认
 `npm run build`/`npm run lint`、`mvn -o clean test` 均干净。**没有验证
 的**:真实浏览器里的像素级渲染/交互(这次会话没有可用的浏览器自动化
 工具)。
+
+### Demo 数据重置 `/internal/demo-reset/**`(2026-08-18)
+
+部署就绪审计(见部署相关文档批次,2026-08-17)提出过的第 2 项——公开
+demo 一旦有真实访客走一遍选座/支付流程,种子数据会被"用坏"——这次落地。
+前提沿用审计当时的确认:admin 面板部署后保持私密、不对访客开放,所以
+这次重置范围只覆盖顾客端会产生的交易数据 + 场次过期问题,不碰
+`movie_status_history` 或影厅/影院数据。
+
+**两个端点,不是一个带 mode 参数的端点**:
+`POST /internal/demo-reset/transactions`(高频,建议每 6 小时——只清
+`bookings`/`payments`/`booking_seats` + Redis `seat-lock:*`,场次不动)
+和 `POST /internal/demo-reset/showtimes`(低频,建议每天一次——在前者
+基础上额外删除全部现有场次并重新生成未来一周)。选两个独立端点而不是
+一个端点 + query 参数切换行为,是因为两者的调度频率本来就不同,拆开后
+每个端点只有一种确定行为,不需要用参数矩阵去描述/测试组合;但**两者不是
+真正互相独立的操作**——`showtimes.id` 对 `bookings` 是 `ON DELETE
+RESTRICT`(V9),要删场次就必须先清空交易数据,所以
+`resetShowtimes()` 内部复用的是和 `resetTransactions()` 完全同一段
+`clearTransactionalData()`,不能假设"反正 transactions 端点已经跑过了"
+就跳过这一步。
+
+**共享密钥,不走 JWT**:`X-Demo-Reset-Secret` 请求头 + `DEMO_RESET_SECRET`
+环境变量(`DemoResetProperties`,和 `TmdbProperties` 同一个"在每个
+profile(含 prod)都留空默认值"的模式,不是 `StripeProperties` 那种
+"prod 必填、缺了直接启动失败"的模式——一个部署不跑定时 demo 重置是完全
+合法的稳态,不是配置遗漏)。`DemoResetService.verifySecret` 是唯一的
+访问控制:先判断密钥是否配置(未配置→503,在比较任何东西之前就短路,
+这样一个留空的密钥永远不可能意外匹配一个留空/缺失的请求头);配置了
+再用 `MessageDigest.isEqual`(常量时间比较,不是 `String.equals`)校验
+请求头。校验放在 controller 里、调用 service 的两个 `@Transactional`
+方法之前,不是方法内部第一行——被拒绝的请求连事务都不开。
+`SecurityConfig` 里 `/internal/demo-reset/**` 整体 `permitAll`,和
+`StripeWebhookController`(签名头认证,不是 JWT)同一个先例。
+
+**为什么不用 `flyway clean`**:Flyway migration 是"只前进一次"的模型,
+不是为"反复清空重建"设计的,`clean` 命令默认在 Spring Boot 里也是
+禁用的(`spring.flyway.clean-disabled=true`)。这次直接在应用层用
+`deleteAllInBatch()`(单条批量 SQL DELETE,不是逐行 ORM delete)操作
+既有 repository,不引入任何 Flyway 相关机制。
+
+**删除顺序:`payments` 先于 `bookings`,`booking_seats` 完全没有单独的
+显式 delete**——`payments.booking_id` 是 `ON DELETE RESTRICT`(V10),
+必须先清 payments 才能删 bookings;`booking_seats.booking_id` 是
+`ON DELETE CASCADE`(V9,"纯连接行,离开父记录没有独立意义"),这是
+数据库级的约束动作,一条批量 `DELETE FROM bookings` 触发的效果和逐行
+delete 完全一样,所以特意**没有**再加一条 `booking_seats` 的显式
+delete——不是漏掉了,是加了也不会更正确,只会多一条冗余语句。
+
+**为什么场次要重新生成,不能只清空**:场次表(`showtimes`)里存的是
+绝对时间戳,`.../transactions` 端点如果连场次一起清空,demo 会退化成
+"什么都订不到";但只清空不重建的话,种子数据本来就没有任何 seed
+showtime(排期从 Phase 4 起就是 admin 手动建的),而且即使当初手动建过,
+时间戳本身也会随时间推移变成过去。`.../showtimes` 端点因此不是"清空",
+是"删除现有的 + 按固定模板重新生成未来 7 天"——模板本身:3 个影厅 ×
+每天 3 个固定时段(11:00 / 15:30 / 20:00,吉隆坡当地时间,复用前端
+`cinemaLocalTimeToIso` 同一个"UTC+8 固定偏移、不查表"的理由)× 未来 7 天
+= 63 场,时段之间留了 4.5 小时间隔——这个间隔是特意留够的,保证不管
+哪部电影被轮到哪个时段,20 分钟清场缓冲(`ShowtimeService
+.CLEANUP_BUFFER`)都不会被触发,不需要为了排时段去感知每部电影的具体
+时长。电影分配用轮询(round-robin)遍历全部 `NOW_PLAYING` 电影,不是
+只让某一部电影占满所有时段。**生成本身复用 `ShowtimeService.create()`
+逐条调用,不是另写一段批量 insert**——这个项目里"什么样的场次是合法的"
+这条业务规则只应该有一处定义,插入 63 行不构成"性能热路径"意味着为了
+省这点数据库往返去重复一份冲突校验逻辑不划算。删除现有场次那一侧则是
+`showtimeRepository.deleteAllInBatch()`,不逐条走
+`ShowtimeService.delete()`——那个方法的 `existsByShowtimeId` 守卫在这个
+调用点必然是"没有命中"(交易数据已经先清空了),再逐条查一遍只是浪费。
+
+**测试**:`DemoResetServiceTest`(Mockito)覆盖 `verifySecret` 全部 4 种
+分支(未配置/配置但全是空白字符/密钥错误/密钥缺失/密钥正确——共 5 个
+测试方法)、场次重生成的数量公式(N 部电影×M 影厅时只要 M>0 就该生成
+`M×3×7` 条,零 `NOW_PLAYING` 电影时该生成 0 条且完全不触碰
+`ShowtimeService.create()`)、两个 reset 方法各自调用的 repository
+方法是否符合预期(`resetTransactions` 绝不触碰
+`showtimeRepository.deleteAllInBatch()`)。`DemoResetFlowIntegrationTest`
+(Testcontainers Postgres+Redis,`app.demo-reset.secret` 配置成固定测试值)
+覆盖真实 HTTP 层面的密钥校验 + 两个端点各自的真实数据变化(交易数据
+清空验证座位锁 Redis key 真的消失、场次和电影不受影响;完整重置验证
+旧场次真的被删、新场次数量符合公式、日期落在未来窗口内、电影目录总数
+不变)。**`DemoResetDisabledFlowIntegrationTest` 是单独一个测试类,不是
+同一个类里的另一个方法**——"未配置"这个场景需要
+`app.demo-reset.secret` 真的是空,这和主测试类"密钥固定配置好"的
+Spring context 用的是不同的属性组合,两者不能共用同一个 `@SpringBootTest`
+上下文。`mvn -o clean test` 全量跑过,218/218 全绿(202 + 10 + 6 新增)。
+
+**验证**:这次涉及真实的数据清空/重建逻辑,延续"Admin 支付异常"那几批
+"不碰 8081/dev 数据库,另起隔离环境"的判断——但这次风险级别更高(操作
+本身就是要清空整张表),所以用了比以往更彻底的隔离:不是复用共享的
+`cineverse` 库开一个新 database 那么简单,而是**额外起了一个独立的
+临时 Redis 容器**(不是复用 `cineverse-redis`),原因是这个端点会
+`FLUSHDB` 级别地清理 `seat-lock:*`,不能冒险碰到开发环境里其他进程
+可能正在用的 Redis 实例。一个 Node 脚本(自建电影/场次/顾客/订单,
+直接 SQL 标记 CONFIRMED + 插入 SUCCEEDED payment,直接 redis-cli 设置
+座位锁 key)跑完整流程:密钥校验(缺失/错误 401)→ 交易重置(确认
+booking/payment 真的从数据库消失、Redis key 真的消失、场次和电影不受
+影响)→ 完整重置(确认旧场次真的 404、新场次数量精确等于
+`hallCount×3×7`、电影目录总数不变、一部真实种子电影标题仍能查到、
+测试电影拿到了新生成的场次且日期在窗口内)——27 项断言,26 项通过,
+唯一"失败"的一项是脚本自己写死的"种子电影应该正好 11 部"这个诊断性
+假设不成立(实际是 10 部 + 这次新建的 1 部测试电影 = 11,后面真正的
+功能性断言——"电影目录总数在改动前后保持 `baselineCount+1` 不变"——
+用的是脚本实际读到的数字而不是写死的假设,这一条正确通过)。跑完清理
+临时 Redis 容器 + 临时数据库,确认 8081、`cineverse-postgres`、
+`cineverse-redis` 全程未受影响。
+
+这个"10 不是 11"的发现顺带牵出一个和这次改动本身无关、但值得顺手查清楚
+的既有出入——它不是这次改动引入的 bug,是"种子数据扩充"一节记录的
+"11 部真实电影"描述的其实是长期开发数据库的状态,而一次真正全新的
+`flyway migrate`(这次的 Testcontainers 集成测试、上面的 throwaway
+smoketest 数据库都是)从来只会产生 10 部——完整根因(`Dune Part Three`
+这部电影从来不是被任何 migration `INSERT` 进去的,只在那一个开发数据库
+里手动建过)见"种子数据扩充"一节下方 2026-08-19 的更正记录,这里不重复。
 
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分

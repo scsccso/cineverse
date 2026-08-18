@@ -102,6 +102,12 @@ app:
     # missing key only disables the admin movie-creation search convenience,
     # not anything a customer-facing flow depends on.
     api-key: ${TMDB_API_KEY:}
+  demo-reset:
+    # Blank in every profile, including prod — see DemoResetProperties. Only
+    # ever needs a real value on a deployment that's running scheduled demo
+    # resets (docs/DEPLOYMENT.md); most deployments simply never set this and
+    # /internal/demo-reset/** stays permanently disabled (503).
+    secret: ${DEMO_RESET_SECRET:}
 
 springdoc:
   swagger-ui:
