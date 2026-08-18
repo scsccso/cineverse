@@ -24,6 +24,13 @@ app:
     refresh-secret: ${JWT_REFRESH_SECRET}
   security:
     cookie-secure: true
+    # Deliberately hardcoded, not env-overridable — see
+    # AuthController.buildCookie's doc comment. None is correct regardless
+    # of whether frontend/backend end up sharing a registrable domain or
+    # not (it works in both topologies; Lax is only ever *required* to be
+    # relaxed away from, never the other way around), so there's no
+    # deployment shape where prod should still want Lax.
+    cookie-same-site: None
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
   frontend:

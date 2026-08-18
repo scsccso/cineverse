@@ -41,9 +41,15 @@ app:
     access-token-ttl: 15m
     refresh-token-ttl: 7d
   security:
-    # httpOnly + secure + SameSite=Strict refresh cookie; secure requires
-    # HTTPS, so it's turned off only in the local profile for plain-HTTP dev.
+    # httpOnly + secure + SameSite=Lax refresh cookie by default; secure
+    # requires HTTPS, so it's turned off only in the local profile for
+    # plain-HTTP dev. cookie-same-site only needs to become None (see
+    # AuthController.buildCookie) when frontend/backend end up deployed on
+    # two different registrable domains — application-prod.yml is where
+    # that gets overridden, not here, since sharing one domain (the
+    # recommended setup) doesn't need it.
     cookie-secure: true
+    cookie-same-site: Lax
   cors:
     # Frontend dev server. SameSite=Strict still works cross-port here
     # because "site" is scheme+eTLD+1 (port doesn't count) — localhost:3000
