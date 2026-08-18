@@ -61,6 +61,13 @@ public class SecurityConfig {
                         // token to check; the Stripe-Signature header
                         // (verified in PaymentService) is the only gate.
                         .requestMatchers("/api/v1/webhooks/**").permitAll()
+                        // A scheduled cron calls this, not a logged-in admin
+                        // — DemoResetService.verifySecret's shared-secret
+                        // header check is the entire access control (see its
+                        // doc comment), same reasoning as the webhook path
+                        // above. Never reachable at all unless
+                        // DEMO_RESET_SECRET is configured (503 otherwise).
+                        .requestMatchers("/internal/demo-reset/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/movies/**", "/api/v1/genres/**",
                                 "/api/v1/cinemas/**", "/api/v1/halls/**", "/api/v1/showtimes/**").permitAll()
                         .requestMatchers("/api/v1/movies/**").hasRole("ADMIN")

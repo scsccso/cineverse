@@ -122,6 +122,99 @@ Vercel 部署 Next.js 项目**不需要 Dockerfile**——Vercel 原生识别
 
 ---
 
+## Demo 数据重置(可选,只有公开 demo 才需要)
+
+`admin` 面板部署后保持私密(不对访客开放)的前提下,公开访客能碰到的
+"会被用坏"的数据只有两类:顾客端交易数据(座位被订、余额记录)、以及
+场次本身会随时间推移过期。`/internal/demo-reset/**` 这两个端点就是为了
+应对这个,只有配置了 `DEMO_RESET_SECRET` 才会启用——不打算做公开 demo
+的部署可以完全不设这个变量,端点会对任何请求返回 503,不产生任何影响。
+完整设计权衡见 CLAUDE.md"Demo 数据重置"一节,这里只列部署时需要配置的
+部分。
+
+| 变量 | 必填 | 说明 |
+|---|---|---|
+| `DEMO_RESET_SECRET` | 否(不设=功能关闭) | 一个足够随机的字符串,建议用 `openssl rand -hex 32` 之类的方式生成,不要手打一个好记的短语——这是这两个数据清空端点唯一的访问控制 |
+
+两个端点,分别配不同的调度频率:
+
+- `POST /internal/demo-reset/transactions`(高频,建议每 6 小时一次):
+  清空 `bookings`/`payments`/`booking_seats` 和 Redis 里所有 `seat-lock:*`
+  key,不动场次排期。
+- `POST /internal/demo-reset/showtimes`(低频,建议每天一次):在
+  `.../transactions` 同样的清理之上,额外删除全部现有场次并按固定模板
+  (3 影厅 × 每天 3 个时段 × 未来 7 天)重新生成——场次的绝对时间戳会
+  过期,只清空交易数据不够,需要这个更完整的重置来保证 demo 永远至少
+  有未来一周可订的场次。
+
+两个请求都要带 `X-Demo-Reset-Secret: <DEMO_RESET_SECRET 的值>` 请求头。
+
+### 调度方式一:GitHub Actions `schedule` 触发器
+
+不依赖部署平台,免费。**这段 YAML 不是一个已经启用的文件**——这个仓库
+目前没有实际部署,把它加进 `.github/workflows/` 会立刻开始按 cron 表
+定时触发、并因为打不到任何真实后端地址而持续失败,所以先留在这里作为
+配置示例,等真的有一个部署好的后端 URL、并且已经把下面两个 secret 配
+进仓库(Settings → Secrets and variables → Actions)之后,再另存为
+`.github/workflows/demo-reset.yml`:
+
+```yaml
+name: Demo Reset
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"  # every 6 hours — transactions
+    - cron: "0 4 * * *"    # once daily at 04:00 UTC — showtimes
+  workflow_dispatch: {}     # manual trigger, for testing
+
+jobs:
+  reset-transactions:
+    if: github.event.schedule == '0 */6 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reset transactions
+        run: |
+          curl -sf -X POST "${{ secrets.DEMO_RESET_BACKEND_URL }}/internal/demo-reset/transactions" \
+            -H "X-Demo-Reset-Secret: ${{ secrets.DEMO_RESET_SECRET }}"
+
+  reset-showtimes:
+    if: github.event.schedule == '0 4 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reset showtimes
+        run: |
+          curl -sf -X POST "${{ secrets.DEMO_RESET_BACKEND_URL }}/internal/demo-reset/showtimes" \
+            -H "X-Demo-Reset-Secret: ${{ secrets.DEMO_RESET_SECRET }}"
+```
+
+两个 repo secrets:`DEMO_RESET_BACKEND_URL`(后端真实域名,不带末尾
+斜杠)、`DEMO_RESET_SECRET`(和部署平台上配的 `DEMO_RESET_SECRET`
+环境变量必须是同一个值)。
+
+### 调度方式二:Railway Cron Job(如果后端部署在 Railway,推荐路径)
+
+Railway 支持在同一个项目下新增一个 "Cron Job" 类型的服务,不需要额外的
+计算资源单独计费(仍按用量算,但不需要一个常驻进程)。步骤(Railway
+控制台里操作,不是提交一个仓库文件):
+
+1. 项目内 New Service → 选 Cron Job(不是 Empty Service/Deploy from Repo
+   那个常驻服务类型)。
+2. Schedule 字段填 cron 表达式(交易清理 `0 */6 * * *`,场次重置
+   `0 4 * * *`,和上面 GitHub Actions 示例的频率保持一致)。
+3. Command 字段:
+   ```
+   curl -sf -X POST https://<后端真实域名>/internal/demo-reset/transactions -H "X-Demo-Reset-Secret: $DEMO_RESET_SECRET"
+   ```
+   (场次重置那个 Cron Job 换成 `.../showtimes`。)
+4. 这个 Cron Job 服务本身也要能读到 `DEMO_RESET_SECRET`——Railway 项目
+   级的环境变量默认对同项目下所有服务可见,和后端服务共用同一个值即可,
+   不需要单独再配一份。
+5. Railway Cron Job 的确切配置字段以控制台当前实际界面为准——Railway
+   的产品细节变化较快,这里给的是核心步骤,不是逐字段截图,创建前建议
+   现场核对一下控制台。
+
+---
+
 ## 首次部署顺序建议
 
 1. 先生成好 `ADMIN_SEED_PASSWORD_HASH`(见上面),连同其余必填变量一起
@@ -132,3 +225,6 @@ Vercel 部署 Next.js 项目**不需要 Dockerfile**——Vercel 原生识别
 4. 用 `ADMIN_SEED_PASSWORD_HASH` 对应的真实密码登录
    `admin@cineverse.local`,确认能进 `/admin/dashboard`。
 5. 按上面的步骤注册 Stripe webhook,发一次测试事件确认签名校验通过。
+6. 如果打算做公开 demo:生成 `DEMO_RESET_SECRET` 配进部署平台,按上面
+   "Demo 数据重置"一节接入一种调度方式,手动触发一次确认两个端点都返回
+   200(而不是等 cron 第一次自然触发才发现配错了)。
