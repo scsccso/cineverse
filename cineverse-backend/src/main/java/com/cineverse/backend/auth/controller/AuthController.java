@@ -45,6 +45,9 @@ public class AuthController {
     @Value("${app.security.cookie-secure}")
     private boolean cookieSecure;
 
+    @Value("${app.security.cookie-same-site}")
+    private String cookieSameSite;
+
     public AuthController(AuthService authService) {
         this.authService = authService;
     }
@@ -112,17 +115,26 @@ public class AuthController {
         return ResponseCookie.from(REFRESH_COOKIE_NAME, value)
                 .httpOnly(true)
                 .secure(cookieSecure)
-                // Lax, not Strict: Stripe Checkout's success/cancel redirect back to
-                // our own origin is a cross-site-initiated top-level GET navigation
-                // (the browser was on checkout.stripe.com right before). Strict
-                // cookies are withheld on exactly that request, so proxy.ts saw no
-                // refresh_token cookie on the landing request and bounced the user
-                // to /login despite a valid session. Lax still attaches on this kind
-                // of top-level navigation but — same as Strict — never on cross-site
-                // XHR/fetch or cross-site POST, and every real API call this app
-                // makes is a same-site fetch from the frontend to itself, so this
-                // doesn't weaken CSRF protection for how the cookie is actually used.
-                .sameSite("Lax")
+                // Configurable, not hardcoded — app.security.cookie-same-site
+                // defaults to Lax (application.yml) and application-prod.yml
+                // overrides it to None. Lax's own reasoning: Stripe Checkout's
+                // success/cancel redirect back to our own origin is a
+                // cross-site-initiated top-level GET navigation (the browser
+                // was on checkout.stripe.com right before). Strict cookies are
+                // withheld on exactly that request, so proxy.ts saw no
+                // refresh_token cookie on the landing request and bounced the
+                // user to /login despite a valid session. Lax still attaches on
+                // this kind of top-level navigation but — same as Strict —
+                // never on cross-site XHR/fetch, which only matters as long as
+                // frontend and backend share a registrable domain ("site", not
+                // origin — see CLAUDE.md Phase 1). Deployed on two different
+                // registrable domains instead (e.g. separate platforms' default
+                // subdomains, no shared custom domain), every fetch() call from
+                // the frontend to the backend becomes genuinely cross-site and
+                // Lax silently drops the cookie on all of them — that's what
+                // the prod override to None is for (requires Secure, already
+                // true whenever cookie-same-site is None).
+                .sameSite(cookieSameSite)
                 .path(REFRESH_COOKIE_PATH)
                 .maxAge(maxAgeSeconds)
                 .build();

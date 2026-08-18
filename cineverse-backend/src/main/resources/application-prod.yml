@@ -10,6 +10,13 @@ spring:
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT}
+  flyway:
+    placeholders:
+      # No fallback (unlike application.yml's base default) — see
+      # V2__seed_admin.sql. Generate this hash yourself (docs/DEPLOYMENT.md
+      # has the exact steps) and store only the hash in the deployment
+      # platform's secret store, never the plaintext password.
+      adminPasswordHash: ${ADMIN_SEED_PASSWORD_HASH}
 
 app:
   jwt:
@@ -17,6 +24,13 @@ app:
     refresh-secret: ${JWT_REFRESH_SECRET}
   security:
     cookie-secure: true
+    # Deliberately hardcoded, not env-overridable — see
+    # AuthController.buildCookie's doc comment. None is correct regardless
+    # of whether frontend/backend end up sharing a registrable domain or
+    # not (it works in both topologies; Lax is only ever *required* to be
+    # relaxed away from, never the other way around), so there's no
+    # deployment shape where prod should still want Lax.
+    cookie-same-site: None
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
   frontend:

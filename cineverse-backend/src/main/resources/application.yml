@@ -14,6 +14,13 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: false
+    placeholders:
+      # V2__seed_admin.sql's password_hash — this fallback is the BCrypt
+      # hash for the well-known local-dev password (Admin@12345), same
+      # dev-only-fallback pattern as the JWT secrets below.
+      # application-prod.yml overrides this with no fallback, so a
+      # production deploy fails loudly instead of shipping this password.
+      adminPasswordHash: ${ADMIN_SEED_PASSWORD_HASH:$2a$10$JbfdJLYzBh/g66wDQQsb4eS22gpUvBdZXEiaZqAXCz96y.wBY8rGS}
   servlet:
     multipart:
       # Slightly above the 5MB business limit enforced in LocalStorageService,
@@ -23,7 +30,29 @@ spring:
       max-request-size: 6MB
 
 server:
-  port: ${SERVER_PORT:8080}
+  # PORT, not just SERVER_PORT: most PaaS platforms (Railway, Render) inject
+  # PORT and expect the process to bind to whatever value they assign, not a
+  # fixed one — SERVER_PORT stays as the fallback for this project's own
+  # existing local-dev convention (e.g. running a second instance side by
+  # side, see docs/DEVELOPMENT.md), and 8080 is the last-resort default.
+  port: ${PORT:${SERVER_PORT:8080}}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Only health — the default Actuator autoconfiguration would
+        # otherwise expose a much wider surface (env, beans, mappings,
+        # etc.) once the starter's on the classpath; a deploy platform's
+        # health check only ever needs this one.
+        include: health
+  endpoint:
+    health:
+      # Explicit, not just relying on Spring Boot's own default (which is
+      # also "never") — this is a permitAll'd, unauthenticated endpoint
+      # (see SecurityConfig), so it must never echo back datasource/redis
+      # connection details to an anonymous caller.
+      show-details: never
 
 app:
   jwt:
@@ -34,9 +63,15 @@ app:
     access-token-ttl: 15m
     refresh-token-ttl: 7d
   security:
-    # httpOnly + secure + SameSite=Strict refresh cookie; secure requires
-    # HTTPS, so it's turned off only in the local profile for plain-HTTP dev.
+    # httpOnly + secure + SameSite=Lax refresh cookie by default; secure
+    # requires HTTPS, so it's turned off only in the local profile for
+    # plain-HTTP dev. cookie-same-site only needs to become None (see
+    # AuthController.buildCookie) when frontend/backend end up deployed on
+    # two different registrable domains — application-prod.yml is where
+    # that gets overridden, not here, since sharing one domain (the
+    # recommended setup) doesn't need it.
     cookie-secure: true
+    cookie-same-site: Lax
   cors:
     # Frontend dev server. SameSite=Strict still works cross-port here
     # because "site" is scheme+eTLD+1 (port doesn't count) — localhost:3000
