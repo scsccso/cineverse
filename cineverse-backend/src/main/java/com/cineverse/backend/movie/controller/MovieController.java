@@ -3,10 +3,12 @@ package com.cineverse.backend.movie.controller;
 import com.cineverse.backend.movie.dto.MovieRequest;
 import com.cineverse.backend.movie.dto.MovieResponse;
 import com.cineverse.backend.movie.dto.UpdateMovieImageUrlsRequest;
+import com.cineverse.backend.movie.dto.UpdateMovieStatusRequest;
 import com.cineverse.backend.movie.entity.MovieStatus;
 import com.cineverse.backend.movie.service.MovieService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -16,6 +18,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -60,16 +63,31 @@ public class MovieController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @SecurityRequirement(name = "bearerAuth")
-    @Operation(summary = "创建电影", description = "仅 ADMIN")
-    public MovieResponse create(@Valid @RequestBody MovieRequest request) {
-        return movieService.create(request);
+    @Operation(summary = "创建电影", description = "仅 ADMIN;同时写入状态历史第 0 条记录(fromStatus=null)")
+    public MovieResponse create(@Valid @RequestBody MovieRequest request, Authentication authentication) {
+        return movieService.create(request, UUID.fromString(authentication.getName()));
     }
 
     @PutMapping("/{id}")
     @SecurityRequirement(name = "bearerAuth")
-    @Operation(summary = "更新电影", description = "仅 ADMIN;全量替换")
+    @Operation(summary = "更新电影", description = "仅 ADMIN;全量替换。status 字段必须和当前值一致——"
+            + "改状态请用 PATCH /{id}/status,否则返回 409")
+    @ApiResponse(responseCode = "409", description = "status 字段和电影当前状态不一致")
     public MovieResponse update(@PathVariable UUID id, @Valid @RequestBody MovieRequest request) {
         return movieService.update(id, request);
+    }
+
+    @PatchMapping("/{id}/status")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "修改电影状态", description = "仅 ADMIN;这是修改电影状态的唯一路径——"
+            + "写入一条 movie_status_history 记录。目标状态和当前状态相同时返回 409,不做成静默 no-op;"
+            + "不限制具体允许哪些状态跳转")
+    @ApiResponse(responseCode = "409", description = "目标状态和当前状态相同")
+    public MovieResponse changeStatus(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateMovieStatusRequest request,
+            Authentication authentication) {
+        return movieService.changeStatus(id, request.status(), UUID.fromString(authentication.getName()));
     }
 
     @DeleteMapping("/{id}")

@@ -2093,15 +2093,183 @@ grep 到,但它旁边不会有任何看起来像中文的字符),必须专门再
 格式。README 里此前那一批截图中带中文日期的两张(选座页、电子票页)
 连同展示占用率图表 x 轴的 admin dashboard 一并重新截图替换。
 
+### 电影状态变更历史 `movie_status_history`(2026-08-17)
+
+补上 Backlog 里排队已久的一项:电影状态什么时候变的、变了几次、这一轮
+上架了多久,此前完全没有记录——`movies.status` 只能通过通用 `PUT`(全量
+替换)修改,没有任何历史留痕。方案在动手前先完整讨论确认过,实现严格
+按方案执行,没有中途调整。
+
+**新增表 `movie_status_history`(`V18__movie_status_history.sql`)**:
+`movie_id`(FK → `movies.id`)、`from_status`(可空,`NULL` = 电影创建时
+写入的初始状态,不是一次"变更")、`to_status`、`changed_at`、`changed_by`
+(FK → `users.id`,可空)。索引只加了一个 `(movie_id, changed_at DESC)`
+复合索引,服务"取某部电影完整时间线、按时间倒序"这一个查询,没有多加。
+
+- **`movie_id` 用 `ON DELETE CASCADE`,不是这个项目围绕 `movies` 一贯的
+  `RESTRICT`**——这是刻意的、和 Phase 4/8 那套先例相反的选择,不是随手
+  默认值。`RESTRICT` 保护的是有真实业务后果的数据(场次、订单——级联
+  删除等于销毁交易记录);这张表是纯审计元数据,一旦电影本身能被删除
+  (前提是已经零排期场次,本来就相当"惰性"的状态),它的状态历史不再
+  有独立价值,也没有其他表引用它。集成测试
+  (`MovieAdminFlowIntegrationTest.deletingAMovieCascadesItsStatusHistory`)
+  专门断言这一条,E2E 验证阶段又用 `docker exec ... psql` 直接查表核实
+  了一遍(见下面"验证"),不是只信任 HTTP 层面的间接证据。
+- **`changed_by` 用 `ON DELETE SET NULL`**:做出这次变更的 admin 账号
+  以后被删除(`/admin/users` 支持删除用户),历史记录本身应该保留——
+  "这一刻发生过一次状态变更"这个事实不该因为操作者账号消失而跟着消失,
+  只是"是谁做的"这条信息丢失,前端显示"—"。
+- **记录 `changed_by`**:提取当前 admin UUID 的模式已经现成存在
+  (`AdminUserController` 自我锁定检查那套 `Authentication authentication`
+  + `UUID.fromString(authentication.getName())`),零新增基建成本;而且
+  这次整个功能的目的就是审计追溯,不记录操作者会让审计价值打对折。
+- **不加 `reason`/备注字段**:没有被要求,加一个自由文本字段意味着还要
+  设计必填/选填 UI,超出这次要解决的问题范围。
+
+**API 契约**:
+
+- **`PATCH /api/v1/movies/{id}/status`**——留在既有的 `MovieController`,
+  和 `PATCH /movies/{id}/image-urls` 同一个精确先例(局部更新、不碰
+  `MovieRequest`/`PUT`)。落在 `/api/v1/movies/**` 下,现有
+  `SecurityConfig` 的 `.requestMatchers("/api/v1/movies/**").hasRole
+  ("ADMIN")` 已经覆盖所有非 GET 动词,没有改 `SecurityConfig`。请求体
+  只有 `status` 一个字段,响应是 `MovieResponse`(和其余所有 mutate
+  端点一致的约定——返回资源本身,不是包装体)。
+- **`GET /api/v1/admin/movies/{id}/status-history`**——新开一个小
+  controller(`AdminMovieStatusHistoryController`),**不能**放在
+  `/api/v1/movies/**` 下:该路径的 GET 动词已经被
+  `.requestMatchers(HttpMethod.GET, "/api/v1/movies/**", ...)
+  .permitAll()` 整体放行(顾客端浏览电影列表用的就是这条),新端点会被
+  这条规则先匹配到、变成公开可读——而响应里带着 admin 邮箱,必须是
+  ADMIN-only。改放 `/api/v1/admin/movies/**`(`AdminMovieTmdbController`
+  已经在用这个 base path,`.requestMatchers("/api/v1/admin/**")
+  .hasRole("ADMIN")` 直接覆盖,同样不用改 `SecurityConfig`)。新开
+  controller 而不是塞进 TMDB 那个,是因为两者是不同关注点(代理外部
+  API vs 读自己的审计数据),延续这个项目"一个 admin 子功能一个
+  controller"的既有粒度。返回 `List<MovieStatusHistoryEntryResponse>`,
+  按 `changedAt` 倒序(最新在前)——和 F-2 订单列表"按 `created_at DESC`"
+  同一个理由,打开这个区块的心智是"最近发生了什么"。两个新端点都**不加
+  `@PreAuthorize`**,沿用 `AdminMovieTmdbController` 已经写明的"ADMIN
+  门禁完全靠 URL 级规则"这条已确认的教训。
+
+**状态变更校验**:
+
+- **PUT 必须显式拒绝"偷偷改状态"**:`MovieRequest.status` 仍然是
+  `@NotNull`(不改字段可空性,避免影响 POST/create 语义)。但
+  `MovieService.update()` 新增一步:请求体 `status` 和电影当前值不同时
+  抛新异常 `MovieStatusChangeNotAllowedException`(409,"Status cannot be
+  changed via PUT — use PATCH /movies/{id}/status instead.")。**这个
+  校验是服务端强制的,不是只在前端隐藏输入框**——直接对应
+  `AdminUserService` 自我锁定"不能只靠前端禁用按钮"的先例,不然任何人
+  拿 curl/Swagger 直接打 PUT 就能绕过整个历史追踪。集成测试里专门有一条
+  真实 HTTP 回归防护(`puttingADifferentStatusIsRejectedWith409SoPatch
+  IsTheOnlyWayToChangeStatus`),不是只在 mock 里成立。
+- **PATCH 拒绝同状态**(`to_status == 当前状态`)→ 409
+  (`MovieStatusUnchangedException`,"Movie is already {status}.")。
+  **不做成静默 no-op**:静默成功会掩盖前端 bug(比如按钮没有正确禁用
+  当前状态选项),而这是低频 admin 操作,不在乎多一次明确报错的摩擦
+  成本——延续 Phase 7 核销"三项校验任何一项失败都不产生副作用"的精确
+  错误语义风格。
+- **不限制具体允许哪些状态跳转(不挡 `ENDED`→`NOW_PLAYING` 这类"看似
+  不合理"的跳转)**:表面上像是不合理状态倒退,但现实里有正当场景
+  (重映/周年场/特别放映),而 PATCH 一旦落地就是**唯一**改状态的路径
+  ——如果再加一条"不能从 `ENDED` 回到 `NOW_PLAYING`"的硬限制,admin
+  遇到真实重映场景时会被这个系统彻底堵死,没有任何路径能改回来。这和
+  项目一贯"不为假设的场景添加限制性规则"的取舍同一个原则(不加 VIP
+  座位类型、不做核销时间窗口限制)。单元测试里有一条参数化测试遍历全部
+  6 种跨状态跳转,逐一断言都能成功,证明这条"不限制"是真的没有隐藏
+  逻辑在挡,不是恰好没写测试覆盖到。
+
+**派生统计(当前状态持续时长、进入 Now Playing 次数):前端算,不进后端
+响应**——这两个都是对已经拿到手的时间戳做纯算术,不涉及任何需要在
+前后端各写一份、可能随时间跑偏的业务规则(对比座位图 `columnSpan`——那
+是真的业务规则,规则本身可能变,后端才是权威),响应保持一份干净的
+扁平列表。
+
+**不回填种子数据的历史空白**:11 部种子电影(以及这次上线前就存在的
+任何电影)在这次 migration 里没有拿到一条合成的"创建时"历史记录。一条
+合成记录(`from=NULL, to=当前status, changed_at=movie.created_at`)会
+呈现出一种它并不具备的精确度——如果这部电影的状态在这次改动上线前就
+已经通过旧的 PUT 路径变过(完全可能),`changed_at` 用 `created_at` 会
+是错的,"当前状态持续了 N 天"这个前端派生统计会悄悄算错。新电影从创建
+起自动有第 0 条记录(`MovieService.create()` 在同一个事务里写入,
+`from_status=NULL`),所以这个空白严格收窄在"这次上线前就存在的电影"
+这个有限集合上,不会再扩大。前端对零历史记录的电影展示诚实的空状态
+文案("此功能上线前的历史未记录"),不伪造锚点。
+
+**前端**:
+
+- **`MovieForm` 的 `status` 字段:创建模式保留 `<select>`,编辑模式换成
+  一个不可见的 `<input type="hidden">`**——PUT 是全量替换,后端仍然要求
+  请求体带 `status`(不改字段可空性),但编辑模式下这个值只能等于电影
+  当前状态(否则触发上面的 409 guard),所以不再暴露成可编辑的下拉框,
+  只是保持注册、值不变。创建模式不受影响,继续是设定初始状态的唯一
+  入口(POST 不是"变更",不受这次新规则约束)。
+- **编辑页新增 `MovieStatusControl`(只读徽章 + 通用"改状态"选择器)**:
+  放在 Basic Info 卡片顶部,覆盖全部 6 种跳转,不只是已有两个一键按钮
+  (`ScheduleShowtimesNudge` 的"标记为已下映"、post-scheduling banner 的
+  "切换到 Now Playing")覆盖的那两种常见情况。三处触发最终都收敛到编辑
+  页同一个 `applyStatus()` 函数,这次把它从"拼一份完整 `MovieRequest`
+  再走 PUT"简化成直接调用新的 `updateMovieStatus`(PATCH)。徽章复用
+  `/admin/movies` 列表页已有的 `Badge` variant 映射(`variant` 本身
+  differs——default/secondary/outline,不止是颜色差异,已经满足"不靠
+  颜色单独区分状态"的标准),这套映射连同标签/选项数组一并提到新的
+  `lib/movie-status.ts` 共享模块,三处调用点(列表页、`MovieForm`、
+  `MovieStatusControl`)不再各自维护一份可能跑偏的副本。
+- **`MovieStatusControl` 内部选择器状态用 `key={movie.status}` 让父组件
+  remount 来重置,不是 `useEffect` 里同步 `setState`**——这个项目已经
+  踩过一次 `react-hooks/set-state-in-effect` 的坑(见 Phase 8 admin
+  dashboard),这次是同一类"内部状态需要跟随外部 prop 变化重置"的场景,
+  用 remount 而不是 effect 同步。
+- **编辑页底部新增 `MovieStatusHistoryPanel`,原生 `<details>` 折叠**
+  ——照抄 Phase 8 报表数据表格已经验证过的可折叠模式,不新引入组件。
+  默认折叠、放在页面最下方:这是查阅型信息,不需要和 Basic Info/图片
+  卡片/`ScheduleShowtimesNudge` 抢注意力。时间戳格式化用
+  `toLocaleString("en-GB")`/`toLocaleDateString("en-GB")`,跟随
+  2026-08-16 那次 zh-CN 清理后确立的统一 locale 惯例,没有在新代码里
+  重新引入刚修过的那个 bug。
+
+**测试**:
+
+- **单元(Mockito)**:`MovieServiceTest`(新文件——这个项目此前
+  `MovieService` 完全没有单元测试)覆盖 PATCH 合法跳转写入历史行、
+  PATCH 同状态 409 且 `verifyNoInteractions` 证明短路在任何查库动作
+  之前、PUT 状态不同 409 且实体未被修改、PUT 状态相同正常成功且不写
+  历史,以及一条参数化测试遍历全部 6 种跨状态跳转;
+  `MovieStatusHistoryServiceTest` 覆盖 404 短路 + mapper 透传。
+- **集成(Testcontainers)**:新增方法直接加进已有的
+  `MovieAdminFlowIntegrationTest`(不新开文件,照抄"Admin 列表页搜索"
+  批次的既有惯例)——创建电影写入第 0 条历史 + PATCH 追加第二条(含
+  `changedByEmail` 解析到真实登录的 admin)、同状态 PATCH 409、
+  **PUT 改状态真实 HTTP 409(最关键的回归防护)**、PUT 不改状态正常
+  成功且历史不变、404/401/403 权限门禁、**删除电影级联清除历史行**。
+  `mvn -o clean test` 全量跑过,202/202 全绿。
+
+**验证**:这次涉及真实后端代码改动(新表 + 修改既有 PUT 端点行为),延续
+"Admin 支付异常"/"Admin 列表页搜索"那几批的判断——8081 端口预先跑着的是
+这次改动之前编译的旧代码,不确定是否还有人在用,没有碰它,而是在 8083
+端口另起一个用当前分支代码编译的临时实例,指向同一套 Postgres/Redis。
+一个 Node 脚本对着**自己创建、自己清理**的一部测试电影(不碰种子数据)
+跑完整流程:创建(确认第 0 条历史)→ PATCH 切换状态(确认历史正确追加、
+newest-first 排序)→ 同状态 PATCH(409,消息精确匹配)→ PUT 改状态
+(409,消息包含"PATCH"提示)→ 确认被拒绝的 PUT 没有改动任何字段 →
+PUT 不改状态的正常编辑(确认成功且历史行数不变)→ 401/403 权限门禁
+(GET 历史 + PATCH 状态各两次)→ 未知电影 404 → 删除电影 → 确认电影
+本身 404,一共 30 项断言全部通过。删除后额外用 `docker exec
+cineverse-postgres psql` 直接查 `movie_status_history` 表按
+`movie_id` 计数,确认为 0——这是对上面"movie_id 用 CASCADE"这条决定
+本身的直接证据,不只是通过 API 间接推断。跑完按端口号找到 PID(`mvn
+spring-boot:run` fork 出的子 `java` 进程,和以前几批一样需要手动按
+PID kill,单纯停掉包着它的 shell 任务不会连带杀死子进程)确认已经不在
+监听,全程 8081 保持未受影响(验证前后分别 curl 确认过仍是 200)。
+`npm run build`/`npm run lint`、`mvn -o clean test` 均干净。**没有验证
+的**:真实浏览器里的像素级渲染/交互(这次会话没有可用的浏览器自动化
+工具)。
+
 ### Backlog(MVP不做,时间充裕再加)
 - 促销/会员积分
 - 评价评分
 - 邮件/短信通知
-- **电影上架状态历史/审计追踪**(`movie_status_history` 表 + 独立
-  `PATCH /movies/{id}/status` 接口,和通用 `PUT` 分离,避免历史记录被
-  无关字段编辑一并污染)——设计方向已讨论确认,尚未实现,待单独立项。
-  和上面三条不同:不是"价值低不做",只是还没排上;真要做的话在第 3 节
-  另开一个 Phase/条目记录设计权衡,不要直接在这一行展开。
 
 ---
 

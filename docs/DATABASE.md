@@ -8,7 +8,7 @@
 > 每张表标注了"引入于"哪个 Phase——对照 `CLAUDE.md` 第 3 节的 Phase
 > 记录,能查到"当时为什么这么设计"的完整背景和权衡过程,本文件本身只
 > 整理"现状是什么",不重复那些设计推理。
-> 当前覆盖:V1 ~ V17(Phase 1~8 + 三次审计后的数据补丁)。
+> 当前覆盖:V1 ~ V18(Phase 1~8 + 三次审计后的数据补丁 + 电影状态变更历史)。
 
 ---
 
@@ -33,6 +33,7 @@
 | `V15__delete_test_seed_movies.sql` | 数据清理(非 schema 变更):按依赖顺序删除 `Verify Fix`/`Verify Movie`/`E2E Test Movie` 三部测试 fixture 及其关联的 `showtimes`/`bookings`/`payments` | 审计后修复(见 CLAUDE.md) |
 | `V16__seed_diverse_movies.sql` | 种子数据(非 schema 变更):补充 10 部真实、类型多样的电影(OMDb 匹配 + 硬编码 UUID,含 `movie_genres` 关联) | 审计后修复(见 CLAUDE.md) |
 | `V17__update_movie_backdrop_urls.sql` | 数据补丁(非 schema 变更):按 `title` 匹配,把全部 11 部电影的 `backdrop_url` 从 OMDb 海报图换成 TMDB 的真实横版剧照(`poster_url` 不变) | 审计后修复(见 CLAUDE.md) |
+| `V18__movie_status_history.sql` | 新增 `movie_status_history`(每次电影状态变更一行,含创建时写入的第 0 条初始状态记录) | 电影状态变更历史(见 CLAUDE.md) |
 
 ---
 
@@ -41,6 +42,7 @@
 ```
 users ──1:N──▶ refresh_tokens
 users ──1:N──▶ bookings
+movies ──1:N──▶ movie_status_history
 
 cinemas ──1:N──▶ halls ──1:N──▶ seats
                                    ▲
@@ -67,6 +69,7 @@ movies ──N:N──▶ genres            │
 - `cinemas` 1──N `halls`
 - `halls` 1──N `seats`
 - `movies` N──N `genres`(通过 `movie_genres` 连接表)
+- `movies` 1──N `movie_status_history`(一部电影每次状态变更 + 创建时写入的初始状态,各一行)
 - `movies` 1──N `showtimes`
 - `halls` 1──N `showtimes`
 - `showtimes` 1──N `bookings`
@@ -98,7 +101,10 @@ movies ──N:N──▶ genres            │
 会话历史没有留存价值)、`movie_genres.*`、`booking_seats.booking_id`(纯连接/
 从属行,离开父记录没有独立意义——注意 `booking_seats` 对 `bookings` 是
 `CASCADE`,对 `seats` 却是 `RESTRICT`,这两个方向的策略不对称是有意的,取决于
-"谁是这条从属记录真正依附的一方")。
+"谁是这条从属记录真正依附的一方")、`movie_status_history.movie_id`(纯审计
+元数据,没有独立于电影本身的意义——电影一旦真的可以被删除,已经是零排期场次
+的状态,它的状态历史此时也没有留存价值;和上面几条“下游=真实业务事实”不是
+同一类记录)。
 
 ---
 
@@ -183,6 +189,26 @@ genre 管理 API)。
 | `genre_id` | `UUID` | 否 | — | FK → `genres.id`,**`ON DELETE CASCADE`**;复合主键的一部分 |
 
 主键:`(movie_id, genre_id)`。索引:`idx_movie_genres_genre_id`。
+
+### `movie_status_history`(2026-08-17,`V18__movie_status_history.sql`)
+
+每次电影状态变更(`PATCH /api/v1/movies/{id}/status`,唯一能改状态的路径)
+写入一行;电影创建时(`POST /api/v1/movies`)也会写入第 0 条,`from_status`
+为 `NULL`——这一行代表初始状态,不是一次"变更"。完整设计权衡见 CLAUDE.md
+"电影状态变更历史"一节。
+
+| 字段 | 类型 | 可空 | 默认值 | 备注 |
+|---|---|---|---|---|
+| `id` | `UUID` | 否 | `gen_random_uuid()` | 主键 |
+| `movie_id` | `UUID` | 否 | — | FK → `movies.id`,**`ON DELETE CASCADE`**——见上面"ON DELETE RESTRICT 一览"末尾的对照组说明 |
+| `from_status` | `VARCHAR(20)` | 是 | — | CHECK 限定同 `movies.status` 三个值;`NULL` = 电影创建时的初始状态 |
+| `to_status` | `VARCHAR(20)` | 否 | — | CHECK 限定同上 |
+| `changed_at` | `TIMESTAMPTZ` | 否 | `now()` | |
+| `changed_by` | `UUID` | 是 | — | FK → `users.id`,**`ON DELETE SET NULL`**——操作者账号被删除后这条历史记录仍然保留,只是"谁做的"这条信息丢失,前端显示 `—` |
+
+主键:`id`。索引:`idx_movie_status_history_movie_id_changed_at`
+(`movie_id, changed_at DESC` 复合索引,支撑"取某部电影的完整时间线、按时间
+倒序"这一个查询,没有再加别的)。
 
 ### `cinemas`(Phase 3,`V5__cinemas_halls_seats.sql`)
 

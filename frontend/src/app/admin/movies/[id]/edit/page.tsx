@@ -6,12 +6,21 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { getMovie } from "@/lib/api/movies";
-import { getGenres, updateMovie, uploadMoviePoster, uploadMovieBackdrop } from "@/lib/api/admin-movies";
+import {
+  getGenres,
+  getMovieStatusHistory,
+  updateMovie,
+  updateMovieStatus,
+  uploadMoviePoster,
+  uploadMovieBackdrop,
+} from "@/lib/api/admin-movies";
 import { listShowtimes } from "@/lib/api/admin-showtimes";
 import { ApiError } from "@/lib/api/client";
-import type { GenreResponse, MovieResponse, MovieStatus } from "@/lib/api/types";
+import type { GenreResponse, MovieResponse, MovieStatus, MovieStatusHistoryEntry } from "@/lib/api/types";
 import { MovieForm } from "@/components/admin/movie-form";
 import { MovieImageUpload } from "@/components/admin/movie-image-upload";
+import { MovieStatusControl } from "@/components/admin/movie-status-control";
+import { MovieStatusHistoryPanel } from "@/components/admin/movie-status-history-panel";
 import { ScheduleShowtimesNudge } from "@/components/admin/schedule-showtimes-nudge";
 import { AnimatedFormBanner } from "@/components/motion/animated-form-banner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -64,6 +73,11 @@ export default function EditMoviePage() {
   const [upcomingShowtimeCount, setUpcomingShowtimeCount] = useState<number | null>(null);
   const [statusSwitchError, setStatusSwitchError] = useState<string | null>(null);
   const [isApplyingStatus, setIsApplyingStatus] = useState(false);
+  // null covers "still loading" and "the fetch failed" — MovieStatusHistoryPanel
+  // renders a "Loading…" line either way and is collapsed by default, so
+  // this is a secondary signal the same way upcomingShowtimeCount is, not
+  // something that should trigger the full-page loadError branch.
+  const [historyEntries, setHistoryEntries] = useState<MovieStatusHistoryEntry[] | null>(null);
 
   useEffect(() => {
     if (
@@ -108,6 +122,31 @@ export default function EditMoviePage() {
     };
   }, [id]);
 
+  useEffect(() => {
+    let cancelled = false;
+    callAuthorized((token) => getMovieStatusHistory(token, id))
+      .then((entries) => {
+        if (!cancelled) setHistoryEntries(entries);
+      })
+      .catch(() => {
+        // Silent on purpose — see historyEntries' doc comment above.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  /** Re-fetched after a successful status change (see applyStatus below) —
+   * no cancellation guard here, unlike the mount effect above: this only
+   * ever runs in direct response to a completed user-triggered action, not
+   * as a background effect that could race a navigation away. */
+  function refreshHistory() {
+    callAuthorized((token) => getMovieStatusHistory(token, id))
+      .then(setHistoryEntries)
+      .catch(() => {});
+  }
+
   function handleSaved(saved: MovieResponse) {
     setMovie(saved);
     setJustCreated(false);
@@ -117,32 +156,25 @@ export default function EditMoviePage() {
     setSavedBanner(true);
   }
 
-  /** Backs both the persistent nudge card's "Mark as Ended" and the
-   * one-time post-scheduling banner's "Switch to Now Playing" — same
-   * full-replace PUT MovieForm's Save button already makes (see
-   * MovieRequest's doc comment on why every field has to be resent), just
-   * pre-filled from the currently-loaded movie with only status flipped, and
-   * pre-submitted. Still one explicit admin click either way, not an
-   * automatic status change. */
+  /** The one function everything that changes status calls — the
+   * persistent nudge card's "Mark as Ended", the one-time post-scheduling
+   * banner's "Switch to Now Playing", and MovieStatusControl's general
+   * "Update Status" picker all funnel through this. Uses PATCH
+   * /movies/{id}/status, not MovieForm's full-replace PUT (see
+   * MovieRequest's doc comment — PUT rejects a status difference outright
+   * now) — one explicit admin click either way, not an automatic status
+   * change. Requesting the movie's already-current status surfaces as a
+   * 409 through statusSwitchError below like any other failure; the picker
+   * disables its own button for that case, but this function doesn't
+   * special-case it — see MovieStatusControl. */
   async function applyStatus(next: MovieStatus) {
     if (!movie) return;
     setStatusSwitchError(null);
     setIsApplyingStatus(true);
     try {
-      const saved = await callAuthorized((token) =>
-        updateMovie(token, id, {
-          title: movie.title,
-          description: movie.description,
-          tagline: movie.tagline,
-          durationMinutes: movie.durationMinutes,
-          contentRating: movie.contentRating,
-          userRating: movie.userRating,
-          trailerUrl: movie.trailerUrl,
-          status: next,
-          genreIds: movie.genres.map((genre) => genre.id),
-        }),
-      );
+      const saved = await callAuthorized((token) => updateMovieStatus(token, id, next));
       handleSaved(saved);
+      refreshHistory();
     } catch (error) {
       setStatusSwitchError(
         error instanceof ApiError ? error.message : "Failed to update status. Please try again later.",
@@ -227,6 +259,12 @@ export default function EditMoviePage() {
               <CardTitle>Basic Info</CardTitle>
             </CardHeader>
             <CardContent>
+              <MovieStatusControl
+                key={movie.status}
+                currentStatus={movie.status}
+                onChangeStatus={applyStatus}
+                isChanging={isApplyingStatus}
+              />
               <MovieForm
                 genres={genres}
                 initialMovie={movie}
@@ -268,6 +306,8 @@ export default function EditMoviePage() {
             onMarkEnded={() => applyStatus("ENDED")}
             isMarkingEnded={isApplyingStatus}
           />
+
+          <MovieStatusHistoryPanel movie={movie} entries={historyEntries} />
         </div>
       )}
     </section>

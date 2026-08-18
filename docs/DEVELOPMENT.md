@@ -629,3 +629,37 @@ curl -s -i -X PATCH "http://localhost:8081/api/v1/movies/<movie-id>/image-urls" 
 cd cineverse-backend
 mvn test -Dtest=AdminMovieTmdbServiceTest,TmdbGatewayImplTest,AdminMovieTmdbFlowIntegrationTest,MovieAdminFlowIntegrationTest
 ```
+
+## 电影状态变更历史(2026-08-17)
+
+`PATCH /movies/{id}/status` 是修改电影状态的唯一路径——`PUT /movies/{id}`
+如果请求体里的 `status` 和电影当前值不一致会返回 409(消息里会提示改用
+PATCH)。同状态的 PATCH 同样返回 409(`"Movie is already X."`),不当成
+静默 no-op。完整设计权衡见 CLAUDE.md"电影状态变更历史"一节。
+
+```bash
+ADMIN_TOKEN="<用 admin@cineverse.local / Admin@12345 登录拿到的 accessToken>"
+MOVIE_ID="<任意一部电影的 id>"
+
+# 修改状态——每次成功调用都会在 movie_status_history 里新增一行
+curl -s -i -X PATCH "http://localhost:8081/api/v1/movies/$MOVIE_ID/status" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"status":"NOW_PLAYING"}'
+
+# 查询这部电影的完整状态变更时间线,按 changedAt 倒序(最新在前)。第一条
+# fromStatus=null 的记录是电影创建时写入的初始状态,不是一次"变更"
+curl -s "http://localhost:8081/api/v1/admin/movies/$MOVIE_ID/status-history" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+```
+
+两个接口都是 ADMIN-only:未登录 `401`;登录了但角色是 `CUSTOMER` `403`。
+`status-history` 这个 GET 接口挂在 `/api/v1/admin/movies/**` 下,不是
+`/api/v1/movies/**`——响应里带着操作者邮箱,不能落在后者那条对 GET 全部
+放行的公开路由规则里。
+
+本地跑这个模块的测试:
+
+```bash
+cd cineverse-backend
+mvn test -Dtest=MovieServiceTest,MovieStatusHistoryServiceTest,MovieAdminFlowIntegrationTest
+```

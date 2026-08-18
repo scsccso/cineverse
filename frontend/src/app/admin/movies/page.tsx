@@ -7,24 +7,13 @@ import { Plus, Search } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { getAdminMovies, deleteMovie } from "@/lib/api/admin-movies";
 import { resolveMediaUrl, ApiError } from "@/lib/api/client";
-import type { MovieResponse, MovieStatus, Page } from "@/lib/api/types";
+import type { MovieResponse, Page } from "@/lib/api/types";
+import { MOVIE_STATUS_BADGE_VARIANT as STATUS_BADGE_VARIANT, MOVIE_STATUS_LABELS as STATUS_LABELS } from "@/lib/movie-status";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-
-const STATUS_LABELS: Record<MovieStatus, string> = {
-  NOW_PLAYING: "Now Playing",
-  COMING_SOON: "Coming Soon",
-  ENDED: "Ended",
-};
-
-const STATUS_BADGE_VARIANT: Record<MovieStatus, "default" | "secondary" | "outline"> = {
-  NOW_PLAYING: "default",
-  COMING_SOON: "secondary",
-  ENDED: "outline",
-};
 
 export default function AdminMoviesPage() {
   const { callAuthorized } = useAuth();
