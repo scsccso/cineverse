@@ -32,7 +32,7 @@
 | `V14__update_movie_poster_urls.sql` | 数据补丁(非 schema 变更):按 `title` 匹配,给 `Dune Part Three` 补上从 OMDb API 拿到的真实 `poster_url`/`backdrop_url` | 审计后修复(见 CLAUDE.md) |
 | `V15__delete_test_seed_movies.sql` | 数据清理(非 schema 变更):按依赖顺序删除 `Verify Fix`/`Verify Movie`/`E2E Test Movie` 三部测试 fixture 及其关联的 `showtimes`/`bookings`/`payments` | 审计后修复(见 CLAUDE.md) |
 | `V16__seed_diverse_movies.sql` | 种子数据(非 schema 变更):补充 10 部真实、类型多样的电影(OMDb 匹配 + 硬编码 UUID,含 `movie_genres` 关联) | 审计后修复(见 CLAUDE.md) |
-| `V17__update_movie_backdrop_urls.sql` | 数据补丁(非 schema 变更):按 `title` 匹配,把全部 11 部电影的 `backdrop_url` 从 OMDb 海报图换成 TMDB 的真实横版剧照(`poster_url` 不变) | 审计后修复(见 CLAUDE.md) |
+| `V17__update_movie_backdrop_urls.sql` | 数据补丁(非 schema 变更):按 `title` 匹配,把 `backdrop_url` 从 OMDb 海报图换成 TMDB 的真实横版剧照(`poster_url` 不变)——脚本本身写了 11 条 `UPDATE`,但 `Dune Part Three` 那一条和 `V14` 同理,在从未手动创建过这部电影的数据库(包括任何全新迁移出来的数据库)上是空操作,实际对 `V16` 灌入的 10 部电影生效,见 CLAUDE.md"种子数据扩充"一节 2026-08-19 更正 | 审计后修复(见 CLAUDE.md) |
 | `V18__movie_status_history.sql` | 新增 `movie_status_history`(每次电影状态变更一行,含创建时写入的第 0 条初始状态记录) | 电影状态变更历史(见 CLAUDE.md) |
 
 ---
@@ -348,4 +348,4 @@ Phase 8 的销售报表把它单独统计成"待对账金额",不计入营收总
 | `V14__update_movie_poster_urls.sql` | 给 `Dune Part Three` 回填真实海报图(OMDb API,详见 CLAUDE.md"种子数据的海报图来源"一节) | 按 `title` 匹配、不是 `id`,在没有这行数据的环境上是安全的空操作;图片是热链 `m.media-amazon.com`,不经本地存储 |
 | `V15__delete_test_seed_movies.sql` | 删除 3 部测试 fixture 电影(`Verify Fix`/`Verify Movie`/`E2E Test Movie`),按 FK 依赖顺序连带清理它们的 `showtimes`/`bookings`/`payments` | 按 `title` 匹配;删除顺序是 `payments → bookings → showtimes → movies`,三层 `ON DELETE RESTRICT` 都是显式 `DELETE`,不依赖 CASCADE |
 | `V16__seed_diverse_movies.sql` | 补充 10 部真实、类型多样的电影(科幻/剧情/动作/动画/喜剧/恐怖/犯罪/奇幻/传记),含海报图 + genre 关联,详见 CLAUDE.md"种子数据扩充"一节 | `movies`/`movie_genres` 用硬编码 UUID(`30000000-...-0000000000N`),方便本地/集成测试直接引用;海报同样是热链 `m.media-amazon.com` |
-| `V17__update_movie_backdrop_urls.sql` | 全部 11 部电影的 `backdrop_url` 换成 TMDB 的真实横版剧照(`image.tmdb.org`),`poster_url` 不变,详见 CLAUDE.md"poster_url/backdrop_url 从此是两个不同数据源"一节 | 按 `title` 匹配;TMDB 免费层禁止商用、要求可见署名(logo + 指定文案)——署名 UI 已于 2026-08-14 交付(`TmdbAttribution` 组件,见 CLAUDE.md"TMDB 署名合规"一节) |
+| `V17__update_movie_backdrop_urls.sql` | `backdrop_url` 换成 TMDB 的真实横版剧照(`image.tmdb.org`),`poster_url` 不变,详见 CLAUDE.md"poster_url/backdrop_url 从此是两个不同数据源"一节 | 按 `title` 匹配;和 `V14` 同理,`Dune Part Three` 那一条在全新数据库上是安全的空操作,脚本里 11 条 `UPDATE` 实际只有 10 条(`V16` 灌入的电影)在全新环境上真的生效,见 CLAUDE.md 2026-08-19 更正;TMDB 免费层禁止商用、要求可见署名(logo + 指定文案)——署名 UI 已于 2026-08-14 交付(`TmdbAttribution` 组件,见 CLAUDE.md"TMDB 署名合规"一节) |
