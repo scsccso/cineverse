@@ -36,6 +36,16 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- Ops: only /actuator/health is exposed (see application.yml's
+             management.endpoints.web.exposure.include) — a deploy platform's
+             health check calls this without an Authorization header, so it's
+             explicitly permitAll'd in SecurityConfig rather than requiring
+             auth like everything else. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <!-- Persistence -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

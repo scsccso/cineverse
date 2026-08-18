@@ -52,6 +52,11 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/uploads/**", "/images/**").permitAll()
+                        // Deploy platform health checks call this with no
+                        // Authorization header — only /actuator/health is
+                        // exposed at all (see application.yml), so this
+                        // permitAll doesn't open up the wider Actuator surface.
+                        .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         // Stripe's servers call this directly — no bearer
                         // token to check; the Stripe-Signature header
                         // (verified in PaymentService) is the only gate.

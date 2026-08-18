@@ -30,7 +30,29 @@ spring:
       max-request-size: 6MB
 
 server:
-  port: ${SERVER_PORT:8080}
+  # PORT, not just SERVER_PORT: most PaaS platforms (Railway, Render) inject
+  # PORT and expect the process to bind to whatever value they assign, not a
+  # fixed one — SERVER_PORT stays as the fallback for this project's own
+  # existing local-dev convention (e.g. running a second instance side by
+  # side, see docs/DEVELOPMENT.md), and 8080 is the last-resort default.
+  port: ${PORT:${SERVER_PORT:8080}}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Only health — the default Actuator autoconfiguration would
+        # otherwise expose a much wider surface (env, beans, mappings,
+        # etc.) once the starter's on the classpath; a deploy platform's
+        # health check only ever needs this one.
+        include: health
+  endpoint:
+    health:
+      # Explicit, not just relying on Spring Boot's own default (which is
+      # also "never") — this is a permitAll'd, unauthenticated endpoint
+      # (see SecurityConfig), so it must never echo back datasource/redis
+      # connection details to an anonymous caller.
+      show-details: never
 
 app:
   jwt:
