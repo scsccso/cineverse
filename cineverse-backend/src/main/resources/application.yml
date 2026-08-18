@@ -14,6 +14,13 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: false
+    placeholders:
+      # V2__seed_admin.sql's password_hash — this fallback is the BCrypt
+      # hash for the well-known local-dev password (Admin@12345), same
+      # dev-only-fallback pattern as the JWT secrets below.
+      # application-prod.yml overrides this with no fallback, so a
+      # production deploy fails loudly instead of shipping this password.
+      adminPasswordHash: ${ADMIN_SEED_PASSWORD_HASH:$2a$10$JbfdJLYzBh/g66wDQQsb4eS22gpUvBdZXEiaZqAXCz96y.wBY8rGS}
   servlet:
     multipart:
       # Slightly above the 5MB business limit enforced in LocalStorageService,

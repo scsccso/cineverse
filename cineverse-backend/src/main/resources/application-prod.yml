@@ -10,6 +10,13 @@ spring:
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT}
+  flyway:
+    placeholders:
+      # No fallback (unlike application.yml's base default) — see
+      # V2__seed_admin.sql. Generate this hash yourself (docs/DEPLOYMENT.md
+      # has the exact steps) and store only the hash in the deployment
+      # platform's secret store, never the plaintext password.
+      adminPasswordHash: ${ADMIN_SEED_PASSWORD_HASH}
 
 app:
   jwt:
