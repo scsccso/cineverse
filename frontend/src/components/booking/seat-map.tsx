@@ -166,6 +166,13 @@ const SeatButton = memo(function SeatButton({
   // color, to separate states for colour-blind readers.
   const Icon = seat.status === "LOCKED" ? Lock : seat.status === "BOOKED" ? Check : User;
   const filled = seat.status === "AVAILABLE" && selected;
+  // Bare column number for a standard seat, a range for a couple seat — no
+  // row-letter prefix, since the row label is already printed once to the
+  // left of the whole row (SeatMap). Shared by the hover tooltip below and
+  // the selected-only persistent label; same text, two different triggers.
+  const numberLabel = isCouple
+    ? `${seat.columnNumber}-${seat.columnNumber + seat.columnSpan - 1}`
+    : `${seat.columnNumber}`;
 
   return (
     <motion.button
@@ -177,7 +184,7 @@ const SeatButton = memo(function SeatButton({
       aria-label={ariaLabel(seat, selected)}
       style={{ gridColumn: `${seat.columnNumber} / span ${seat.columnSpan}` }}
       className={cn(
-        "flex h-11 items-center justify-center gap-1 rounded-lg transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "group relative flex h-11 flex-col items-center justify-center gap-0.5 rounded-lg transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         !disabled &&
           !selected &&
           "cursor-pointer border border-glass-border bg-glass-surface text-foreground/80 backdrop-blur-glass hover:border-primary/50 hover:text-foreground",
@@ -189,18 +196,50 @@ const SeatButton = memo(function SeatButton({
           "cursor-not-allowed border border-transparent bg-muted-foreground/25 text-background/70",
       )}
     >
-      {/* Row/seat number lives in aria-label (below) and in the always-visible
-          row-label column + SelectionSummaryBar text once chosen — not printed
-          here, so nothing needs a second, hover-only place to read it. */}
-      <Icon className={cn("size-3.5 shrink-0", filled && "fill-current")} />
-      {isCouple && (
-        <>
-          {/* The "bridge" — inherits whatever text-color class is active
-              above via currentColor, so it re-colors with the seat's state
-              for free instead of needing its own conditional. */}
-          <span aria-hidden className="h-0.5 w-2 shrink-0 rounded-full bg-current" />
-          <Icon className={cn("size-3.5 shrink-0", filled && "fill-current")} />
-        </>
+      {/* Hover/focus-visible tooltip — a sighted-only supplement to the
+          aria-label below, not a replacement, so it's aria-hidden to avoid
+          a screen reader announcing the seat number twice. `group-hover` +
+          `group-focus-visible` (not just hover) so it's reachable without a
+          mouse too. Absolutely positioned above the button — safe to let it
+          escape this button's own grid cell because only one seat is ever
+          hovered/focused at a time, unlike the persistent label below,
+          which can be on-screen for many seats simultaneously and so can't
+          use this same escape-the-cell approach without risking overlap. */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 -translate-x-1/2 rounded-md border border-border bg-popover px-1.5 py-0.5 font-mono text-[10px] text-popover-foreground opacity-0 shadow-sm transition-opacity duration-150 motion-reduce:transition-none group-hover:opacity-100 group-focus-visible:opacity-100"
+      >
+        {numberLabel}
+      </span>
+
+      <div className="flex items-center justify-center gap-1">
+        <Icon className={cn("size-3.5 shrink-0", filled && "fill-current")} />
+        {isCouple && (
+          <>
+            {/* The "bridge" — inherits whatever text-color class is active
+                above via currentColor, so it re-colors with the seat's state
+                for free instead of needing its own conditional. */}
+            <span aria-hidden className="h-0.5 w-2 shrink-0 rounded-full bg-current" />
+            <Icon className={cn("size-3.5 shrink-0", filled && "fill-current")} />
+          </>
+        )}
+      </div>
+
+      {/* Selected-only persistent number — the main way a touch user (no
+          hover) ever sees which seat they picked, and the no-hover-needed
+          confirmation for a mouse user too. Deliberately kept inside the
+          button's own h-11 box instead of absolutely positioned like the
+          tooltip above: rows are only gap-2.5 (10px) apart, and this label
+          can be visible on many selected seats at once, so two vertically
+          adjacent selected seats need their labels physically contained in
+          their own grid cell — the same cell the existing row/column gap
+          already keeps clear of its neighbors — rather than floating free
+          and risking a collision the tooltip's one-at-a-time case doesn't
+          have to worry about. */}
+      {selected && (
+        <span aria-hidden="true" className="font-mono text-[10px] leading-none">
+          {numberLabel}
+        </span>
       )}
     </motion.button>
   );
