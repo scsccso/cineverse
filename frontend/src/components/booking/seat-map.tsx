@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, Heart, Lock, type LucideIcon } from "lucide-react";
+import { memo } from "react";
+import { Check, Lock, User, type LucideIcon } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { SeatStatusEntry } from "@/lib/api/types";
@@ -133,7 +134,21 @@ function ScreenIndicator({ hallName }: { hallName: string }) {
   );
 }
 
-function SeatButton({
+/**
+ * Wrapped in memo with a value-based comparator (not the default reference
+ * check) because seat-picker.tsx's 4s poll (POLL_INTERVAL_MS) replaces the
+ * entire `seats` array with a fresh fetch every tick, so `seat` object
+ * identity churns on a timer regardless of whether anything about this seat
+ * actually changed — a reference comparator would never bail out. Comparing
+ * the fields that actually drive this button's appearance instead means
+ * toggling one seat mid-poll-interval only re-renders that seat, not the
+ * other ~150. `onToggle` is deliberately left out of the comparison even
+ * though SeatMap creates a fresh closure for it on every render (line ~71)
+ * — it only ever closes over this seat (stable per the fields already
+ * compared) and seat-picker.tsx's toggleSeat, whose body only calls stable
+ * setState functions, so an old closure behaves identically to a new one.
+ */
+const SeatButton = memo(function SeatButton({
   seat,
   selected,
   onToggle,
@@ -145,6 +160,12 @@ function SeatButton({
   reduceMotion: boolean | null;
 }) {
   const disabled = seat.status !== "AVAILABLE";
+  const isCouple = seat.seatType === "COUPLE";
+  // Locked/Booked keep their own distinct pictogram rather than a
+  // color-shifted person icon — CLAUDE.md 1.5 requires shape, not just
+  // color, to separate states for colour-blind readers.
+  const Icon = seat.status === "LOCKED" ? Lock : seat.status === "BOOKED" ? Check : User;
+  const filled = seat.status === "AVAILABLE" && selected;
 
   return (
     <motion.button
@@ -156,7 +177,7 @@ function SeatButton({
       aria-label={ariaLabel(seat, selected)}
       style={{ gridColumn: `${seat.columnNumber} / span ${seat.columnSpan}` }}
       className={cn(
-        "flex h-11 items-center justify-center gap-0.5 rounded-lg text-xs font-mono font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "flex h-11 items-center justify-center gap-1 rounded-lg transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         !disabled &&
           !selected &&
           "cursor-pointer border border-glass-border bg-glass-surface text-foreground/80 backdrop-blur-glass hover:border-primary/50 hover:text-foreground",
@@ -168,32 +189,53 @@ function SeatButton({
           "cursor-not-allowed border border-transparent bg-muted-foreground/25 text-background/70",
       )}
     >
-      {seat.status === "LOCKED" ? (
-        <Lock className="size-3.5" />
-      ) : seat.status === "BOOKED" ? (
-        <Check className="size-3.5" />
-      ) : (
+      {/* Row/seat number lives in aria-label (below) and in the always-visible
+          row-label column + SelectionSummaryBar text once chosen — not printed
+          here, so nothing needs a second, hover-only place to read it. */}
+      <Icon className={cn("size-3.5 shrink-0", filled && "fill-current")} />
+      {isCouple && (
         <>
-          {seat.seatType === "COUPLE" && <Heart className="size-3 fill-current" />}
-          {seat.columnNumber}
+          {/* The "bridge" — inherits whatever text-color class is active
+              above via currentColor, so it re-colors with the seat's state
+              for free instead of needing its own conditional. */}
+          <span aria-hidden className="h-0.5 w-2 shrink-0 rounded-full bg-current" />
+          <Icon className={cn("size-3.5 shrink-0", filled && "fill-current")} />
         </>
       )}
     </motion.button>
   );
-}
+},
+(prev, next) =>
+  prev.seat.seatId === next.seat.seatId &&
+  prev.seat.status === next.seat.status &&
+  prev.selected === next.selected &&
+  prev.reduceMotion === next.reduceMotion,
+);
 
 /**
- * The swatches mirror both halves of each seat's encoding, border *and* icon
- * (CLAUDE.md 1.5). They previously carried the border only — so the one cue
- * that actually separates Temporarily Locked from Booked for a colour-blind
- * reader, the lock vs. the tick, was visible on the grid but missing from the
- * key meant to decode it. Available/Selected have no icon on the real seats either (they show the
- * seat number), so they correctly have none here.
+ * The swatches mirror what the grid actually renders (CLAUDE.md 1.5's
+ * "legend must depict the real seat" rule — previously violated for
+ * Temporarily Locked vs. Booked, since fixed here for Available/Selected
+ * too now that those show a filled-vs-outline person icon instead of a bare
+ * seat number, see SeatButton). Couple Seat gets its own two-swatch row
+ * instead of an `items` entry — its shape (two glyphs + a bridge) isn't a
+ * single Icon.
  */
 function SeatLegend() {
-  const items: { label: string; swatch: string; Icon?: LucideIcon; iconClass?: string }[] = [
-    { label: "Available", swatch: "border border-glass-border bg-glass-surface" },
-    { label: "Selected", swatch: "border border-primary bg-primary/15" },
+  const items: { label: string; swatch: string; Icon: LucideIcon; iconClass: string; filled?: boolean }[] = [
+    {
+      label: "Available",
+      swatch: "border border-glass-border bg-glass-surface",
+      Icon: User,
+      iconClass: "text-foreground/80",
+    },
+    {
+      label: "Selected",
+      swatch: "border border-primary bg-primary/15",
+      Icon: User,
+      iconClass: "text-primary",
+      filled: true,
+    },
     {
       label: "Temporarily Locked",
       swatch: "border border-dashed border-muted-foreground/30 bg-muted/20",
@@ -216,13 +258,20 @@ function SeatLegend() {
             className={cn("flex size-5 items-center justify-center rounded", item.swatch)}
             aria-hidden
           >
-            {item.Icon && <item.Icon className={cn("size-3", item.iconClass)} />}
+            <item.Icon className={cn("size-3", item.iconClass, item.filled && "fill-current")} />
           </span>
           {item.label}
         </div>
       ))}
-      <div className="flex items-center gap-1.5">
-        <Heart className="size-3 fill-current text-muted-foreground" aria-hidden />
+      <div className="flex items-center gap-2">
+        <span
+          className="flex h-5 w-8 items-center justify-center gap-0.5 rounded border border-glass-border bg-glass-surface text-foreground/80"
+          aria-hidden
+        >
+          <User className="size-2.5 shrink-0" />
+          <span className="h-0.5 w-1 shrink-0 rounded-full bg-current" />
+          <User className="size-2.5 shrink-0" />
+        </span>
         Couple Seat
       </div>
     </div>
