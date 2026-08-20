@@ -52,6 +52,29 @@
   所有接口正常"。如果遇到一个新写的 controller/service 报奇怪的 bean 装配
   错误、或者只有新端点 500 而其余复用同一个 bean 的旧端点正常,先怀疑这个,
   不要急着去改代码。
+- **改动一条已经执行过的 migration 文件内容,会让所有已经跑过它的持久化
+  数据库出现 checksum mismatch——本机这个长期运行、从未清空重建过的开发
+  数据库真的撞上过一次**(2026-08-21):`V2__seed_admin.sql` 的
+  `password_hash` 从硬编码 hash 改成 Flyway placeholder
+  `${adminPasswordHash}`(见 `docs/DEPLOYMENT.md`「生成
+  `ADMIN_SEED_PASSWORD_HASH`」一节)之后,这台机器上的 Postgres 因为在
+  这次改动**之前**就已经执行过 V2,`flyway_schema_history` 里记录的
+  checksum 还是旧文件内容对应的值——不是理论场景,是一次移动端审计临时
+  起的隔离后端实例第一个撞上的:`validate-on-migrate`(Spring Boot 默认
+  `true`)报 `Migration checksum mismatch for migration version 2` 并
+  拒绝启动。**通用结论**:这类改动不止影响生产环境,任何在改动前就应用
+  过旧版本的持久化数据库都算在内,本地长期使用的开发数据库同样会撞上。
+  修复是跑一次 `flyway repair`——只重新计算并覆写失配那一行的
+  `checksum` 列,不重新执行 migration SQL、不碰任何业务数据(2026-08-21
+  这次修复逐列比对过 `flyway_schema_history` 和业务表行数,前后完全一致
+  才确认安全)。Spring Boot/Flyway 没有"启动时自动 repair"这类机制
+  (`spring.flyway.*` 下只有 `validate-on-migrate`/
+  `validate-migration-naming` 两个校验相关属性,没有等价的
+  repair-on-migrate,查证于 `spring-boot-autoconfigure` 的配置元数据,
+  不是猜测),需要手动跑一次。本项目没有配置 `flyway-maven-plugin`,可以
+  复用已有的 `flyway-core` 依赖,照着上面"生成 `ADMIN_SEED_PASSWORD_HASH`"
+  同样的单文件 Java 程序套路,把最后一步换成
+  `Flyway.configure()...load().repair()`。
 
 ## 环境配置(Profiles)
 
