@@ -1,10 +1,34 @@
 "use client";
 
-import { memo } from "react";
+import { memo, type CSSProperties } from "react";
 import { Check, Lock, User, type LucideIcon } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { SeatStatusEntry } from "@/lib/api/types";
+
+/**
+ * The pure-CSS "scroll shadow" trick — see the comment at its one call site
+ * below for why this exists and how it works. Defined once at module scope
+ * (not inline per render) since it's a static value; four background
+ * layers listed top-to-bottom in paint order: two `local`-attached "cover"
+ * gradients that scroll with the content and sit exactly at its true start
+ * and end, then two `scroll`-attached amber glows pinned to this box's own
+ * left/right edges. The cover only hides the glow on the side that has
+ * nothing left to reveal.
+ */
+const SCROLL_SHADOW_STYLE: CSSProperties = {
+  backgroundImage: [
+    "linear-gradient(to right, var(--background) 30%, transparent)",
+    "linear-gradient(to left, var(--background) 30%, transparent)",
+    "radial-gradient(farthest-side at 0% 50%, color-mix(in oklch, var(--primary) 50%, transparent), transparent)",
+    "radial-gradient(farthest-side at 100% 50%, color-mix(in oklch, var(--primary) 50%, transparent), transparent)",
+  ].join(", "),
+  backgroundPosition: "left center, right center, left center, right center",
+  backgroundRepeat: "no-repeat",
+  backgroundColor: "var(--background)",
+  backgroundSize: "32px 100%, 32px 100%, 18px 100%, 18px 100%",
+  backgroundAttachment: "local, local, scroll, scroll",
+};
 
 interface SeatMapProps {
   hallName: string;
@@ -47,8 +71,26 @@ export function SeatMap({
 
       {/* Horizontally scrollable so a hall wider than the viewport never
           squeezes seats below the 44px (h-11) touch-target minimum — the
-          container scrolls instead of the seats shrinking. */}
-      <div className="overflow-x-auto pb-2">
+          container scrolls instead of the seats shrinking.
+
+          On a hall that actually overflows (the 10x14 hall is the case that
+          motivated this), nothing previously told a mobile user there were
+          more seats off-screen — no icon, no shadow, nothing. Fixed with a
+          pure-CSS "scroll shadow": four background layers, two attached
+          `local` (they scroll with the content and are positioned at the
+          content's true start/end) and two attached `scroll` (pinned to the
+          viewport edges of this box). The `local` pair covers the `scroll`
+          pair's glow exactly when that edge has nothing left to reveal, so
+          the glow only shows on a side that still has cut-off seats and
+          fades out on its own once scrolled all the way — no JS scroll
+          listener or ResizeObserver needed, and a hall that never overflows
+          never shows anything since the "hidden" edge never exists.
+          Preferred over a static text/arrow hint (e.g. "swipe for more")
+          because that would either show unconditionally on every hall
+          (noise on the halls that already fit) or need JS to detect real
+          overflow — this reflects true scroll position for free. */}
+      <div className="overflow-x-auto pb-2" style={SCROLL_SHADOW_STYLE}>
+
         <div className="mx-auto flex w-fit min-w-full flex-col items-center gap-6 px-2">
           <ScreenIndicator hallName={hallName} />
 

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
 import { RegisterForm } from "@/components/auth/register-form";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "Sign up · CineVerse",
@@ -17,9 +19,15 @@ export default function RegisterPage() {
         </CardHeader>
         <CardContent>
           <RegisterForm />
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            Already have an account?{" "}
-            <Link href="/login" className="font-medium text-primary hover:underline">
+          {/* Same fix as login/page.tsx — see the comment there. Reuses
+              navbar.tsx's buttonVariants sizing for this same login/register
+              toggle link instead of a bare unsized <Link>. */}
+          <p className="mt-6 flex flex-wrap items-center justify-center gap-x-1 gap-y-1 text-center text-sm text-muted-foreground">
+            <span>Already have an account?</span>
+            <Link
+              href="/login"
+              className={cn(buttonVariants({ variant: "ghost", size: "default" }), "px-2 font-medium text-primary")}
+            >
               Log in
             </Link>
           </p>

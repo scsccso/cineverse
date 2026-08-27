@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
 import { LoginForm } from "@/components/auth/login-form";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "Log in · CineVerse",
@@ -31,9 +33,22 @@ export default async function LoginPage({
         </CardHeader>
         <CardContent>
           <LoginForm redirectTo={safeRedirect(from)} />
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            Don&apos;t have an account?{" "}
-            <Link href="/register" className="font-medium text-primary hover:underline">
+          {/* Was a bare inline <Link> with no size rule — measured at 17px
+              tall, far under the project's 44x44 (h-11) touch-target
+              standard. Fixed by reusing the same buttonVariants sizing
+              navbar.tsx already applies to its own login/register links
+              (see AuthSection there), not a new styling approach: `ghost` +
+              `default` gives the h-11 hit target while staying background-
+              free at rest, so it still reads as a plain text link, just a
+              tappable one. The row is a flex container (not raw inline
+              text) so the now-taller Link centers predictably against the
+              question text instead of stretching the paragraph's line box. */}
+          <p className="mt-6 flex flex-wrap items-center justify-center gap-x-1 gap-y-1 text-center text-sm text-muted-foreground">
+            <span>Don&apos;t have an account?</span>
+            <Link
+              href="/register"
+              className={cn(buttonVariants({ variant: "ghost", size: "default" }), "px-2 font-medium text-primary")}
+            >
               Sign up
             </Link>
           </p>

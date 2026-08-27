@@ -41,6 +41,19 @@
   `V9__bookings.sql`)不会自动生效,`flyway_schema_history` 表停在旧版本,
   `GET .../seats` 这类新接口会直接 500;重启一次后端进程让 Flyway 重新跑一遍
   就好。
+- **共享的开发数据库 `cineverse-postgres` 上有一个尚未修复的 Flyway V2
+  checksum mismatch**:2026-08-20 的移动端响应式审计(见 CLAUDE.md 对应记录)
+  另起一个独立后端实例、指向这同一个共享容器时,Flyway 在启动阶段直接拒绝
+  连接——`V2__seed_admin.sql` 的 checksum 和 `flyway_schema_history` 表里
+  记录的不一致(具体是这份文件在哪次改动后没有配一次真正的
+  `flyway repair`/重新迁移导致的,还没有查证)。审计没有对着这个其他 session
+  可能还依赖的共享实例贸然跑 `flyway repair`,而是改用完全一次性的
+  Postgres/Redis 容器完成验证,绕开而不是修复了这个问题——所以这个
+  mismatch 原样留在 `cineverse-postgres` 上,下次任何人在本机对着这个共享
+  实例做和 Flyway/迁移相关的操作(比如新增一条 migration 后重启它),大概率
+  会先撞上同样的启动失败。修复本身应该不难(核实 `V2` 文件当前内容和
+  `flyway_schema_history` 里记录的差异后跑一次 `flyway repair`),只是需要
+  先确认不会影响其他并行 session 依赖的数据,目前还没有人做这一步。
 - **反复 `mvn spring-boot:run`(不带 `clean`)偶尔会让某个 bean 装配失败,
   哪怕代码本身完全正确**:2026-08-11 复核 Admin 用户管理时踩到过——
   `target/classes` 里 `UserMapperImpl.class` 明明已经生成,某次单纯重启
